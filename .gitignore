@@ -1,0 +1,27 @@
+# Python / tooling
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+
+# ---- secrets: NEVER commit API keys ----
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.pem
+*.key
+
+# generated reports, PDFs and the Chroma vector DB
+data/
+*.pdf
+chroma/
+
+# local editor / assistant tooling
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

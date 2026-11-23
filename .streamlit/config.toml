@@ -1,0 +1,18 @@
+# Base widgets are dark; the in-app ☀ Light switch restyles everything per browser session
+# (see weather_agent/ui/theme.py), so one visitor's choice never affects another.
+[theme]
+base = "dark"
+primaryColor = "#38bdf8"
+backgroundColor = "#0a0f1a"
+secondaryBackgroundColor = "#121a29"
+textColor = "#eef2f8"
+
+[server]
+headless = true
+maxUploadSize = 10
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
