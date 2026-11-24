@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+THEMES = ("🌙 Dark", "☀️ Light")  # values of st.session_state.theme_choice
+
 # Status palette (reserved for risk / AQI state; always paired with a text label)
 STATUS = {"good": "#0ca30c", "warning": "#fab219", "serious": "#ec835a", "critical": "#d03b3b"}
 RISK_STATUS = {"Low": "good", "Moderate": "warning", "High": "serious", "Severe": "critical"}
@@ -66,6 +68,8 @@ def aqi_color(category: str) -> str:
 
 
 def build_css(mode: str = "dark") -> str:
+    from .skeleton import css as skeleton_css
+
     p = palette(mode)
     light = mode == "light"
     bg_glow = ("radial-gradient(1200px 500px at 10% -10%, rgba(2,132,199,.10), transparent 60%),"
@@ -250,6 +254,10 @@ h1, h2, h3, h4, h5 {{ font-family: var(--sans); letter-spacing: -0.01em; color: 
 .wt-status {{ display:inline-flex; align-items:center; gap:6px; padding: 3px 10px; border-radius: 999px; font-weight: 700;
   font-size: .75rem; letter-spacing: .03em; color: #fff; white-space: nowrap; }}
 .wt-status.warning {{ color: #0b0b0b; }}
+/* inside narrow cards a badge may wrap onto two lines, but never spills outside the card */
+.wt-tile .wt-status, .fc-row .wt-status, .wt-city .wt-status {{ white-space: normal; max-width: 100%; line-height: 1.25;
+  text-align: left; }}
+.wt-tile .note {{ overflow-wrap: anywhere; }}
 
 /* tiles */
 .wt-tiles {{ display:grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 12px; margin-top: 14px; }}
@@ -370,6 +378,60 @@ h1, h2, h3, h4, h5 {{ font-family: var(--sans); letter-spacing: -0.01em; color: 
 .nt-st-note {{ font-size: .74rem; color: var(--muted); word-break: break-word; }}
 [data-testid="stSidebar"] [data-testid="stExpander"] details {{ background: var(--surface-2) !important; }}
 
+/* ---------- chat answers ---------- */
+[data-testid="stChatMessage"]:has([class*="st-key-msgai-"]) {{ border-left: 4px solid var(--accent); padding: 16px 18px 12px; }}
+[data-testid="stChatMessage"]:has([class*="st-key-msguser-"]) {{ background: {p.accent}14; border-color: {p.accent}44; }}
+.ans-head {{ display:flex; align-items:center; gap: 8px; flex-wrap: wrap; font-size: .76rem; color: var(--muted);
+  padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }}
+.ans-head b {{ color: var(--ink); font-size: .82rem; }}
+.ans-flag {{ margin-left: auto; font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }}
+.ans-flag.ok {{ background: rgba(12,163,12,.14); color: {"#067a06" if light else "#5fd35f"}; }}
+.ans-flag.bad {{ background: rgba(208,59,59,.14); color: {"#b42323" if light else "#ff8a8a"}; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] {{ font-size: .93rem; line-height: 1.62; color: var(--ink); }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] h1,
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.12rem !important; font-weight: 800; margin: 1rem 0 .45rem; padding: 0; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] h3,
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] h4 {{ font-size: .98rem !important; font-weight: 700; margin: .9rem 0 .35rem;
+  color: var(--accent) !important; padding: 0; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] h1:first-child,
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] h2:first-child {{ margin-top: .2rem; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] ul,
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] ol {{ padding-left: 1.2rem; margin: .3rem 0 .6rem; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] li {{ margin: .18rem 0; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] li::marker {{ color: var(--accent); }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] strong {{ color: var(--ink); }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] code {{ background: {p.accent}1c !important; color: var(--ink) !important;
+  padding: 1px 6px; border-radius: 6px; font-size: .82em; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] table {{ display: block; overflow-x: auto; max-width: 100%;
+  border-collapse: separate; border-spacing: 0; border: 1px solid var(--border); border-radius: 12px; font-size: .82rem; margin: .6rem 0 .9rem; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] th {{ background: var(--surface-2); color: var(--muted); font-weight: 700;
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; padding: 9px 12px; border-bottom: 1px solid var(--border);
+  text-align: left; white-space: nowrap; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] td {{ padding: 8px 12px; border-bottom: 1px solid var(--border);
+  white-space: nowrap; font-variant-numeric: tabular-nums; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] tr:last-child td {{ border-bottom: 0; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] tbody tr:nth-child(even) td {{ background: {p.accent}0a; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] tbody tr:hover td {{ background: {p.accent}18; }}
+[class*="st-key-msgai-"] [data-testid="stMarkdownContainer"] hr {{ border-color: var(--border); margin: .8rem 0; }}
+.ans-meta {{ display:flex; flex-wrap: wrap; align-items:center; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }}
+.ans-label {{ font-family: var(--mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }}
+.ans-chip {{ font-size: .74rem; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-2); }}
+.ans-chip.muted {{ margin-left: auto; color: var(--muted); }}
+[class*="st-key-actions-"] {{ margin-top: 6px; }}
+[class*="st-key-actions-"] button {{ border-radius: 999px !important; padding: 6px 14px !important; min-height: 36px;
+  background: var(--surface-2) !important; border: 1px solid var(--border) !important; }}
+[class*="st-key-actions-"] button p {{ font-size: .82rem !important; font-weight: 600; color: var(--ink) !important; white-space: nowrap; }}
+[class*="st-key-actions-"] button:hover {{ border-color: var(--accent) !important; background: {p.accent}18 !important; }}
+.ans-rated {{ font-size: .8rem; color: var(--muted); padding: 8px 4px; }}
+
+/* ---------- tooltips (help "?" popups, button hints) follow the theme ---------- */
+[data-baseweb="tooltip"], [data-baseweb="tooltip"] > div, [data-testid="stTooltipContent"] {{
+  background: var(--surface) !important; color: var(--ink) !important; border-radius: 10px !important;
+}}
+[data-baseweb="tooltip"] {{ border: 1px solid var(--border) !important; box-shadow: 0 8px 24px rgba(2,6,23,.25) !important; }}
+[data-baseweb="tooltip"] *, [data-testid="stTooltipContent"] * {{ color: var(--ink) !important; background: transparent !important; }}
+[data-baseweb="tooltip"] [data-testid="stMarkdownContainer"] p {{ font-size: .82rem; line-height: 1.45; margin: 0; }}
+
 /* live context card (AI tab) */
 .fc {{ background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px; box-shadow: var(--shadow); color: var(--ink); }}
 .fc-head {{ display:flex; justify-content:space-between; align-items:center; gap: 10px; margin-bottom: 8px; }}
@@ -379,6 +441,7 @@ h1, h2, h3, h4, h5 {{ font-family: var(--sans); letter-spacing: -0.01em; color: 
 .fc-row span {{ color: var(--muted); white-space: nowrap; }}
 .fc-row b {{ font-weight: 600; text-align: right; display:flex; gap: 6px; align-items:center; flex-wrap: wrap; justify-content:flex-end; }}
 
+{skeleton_css(p, light)}
 /* icons are SVG images that carry their own animation CSS (see ui/icons.py) */
 .wx-icon, .wt-gauge, .wt-compass {{ display:block; flex-shrink:0; }}
 .wt-arrow {{ display:inline-block; vertical-align:middle; }}

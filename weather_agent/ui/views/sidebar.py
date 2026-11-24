@@ -18,10 +18,12 @@ def _open(cid: str) -> None:
         del ss.conversations[current["id"]]
     ss.active_conv = cid
     ss.agent_key = ss.conversations[cid]["agent"]
+    state.open_ai_tab()
 
 
 def _new() -> None:
     state.new_conversation(st.session_state.agent_key)
+    state.open_ai_tab()
 
 
 def _on_agent_change() -> None:
@@ -40,7 +42,13 @@ def render(settings) -> str:
         st.selectbox("Agent", keys, key="agent_key", on_change=_on_agent_change, label_visibility="collapsed",
                      format_func=lambda k: f"{AGENT_PROFILES[k]['icon']}  {AGENT_PROFILES[k]['name']}")
         st.caption(AGENT_PROFILES[ss.agent_key]["description"])
-        st.button("✏️  New conversation", type="primary", width="stretch", on_click=_new, key="new_conv")
+        st.button("✏️  New conversation", type="primary", width="stretch", on_click=_new, key="new_conv",
+                  help="Start a fresh chat and open the AI agent tab")
+        st.html(ui.side_heading("Ask the agent"))
+        side_prompt = st.chat_input(f"Ask {AGENT_PROFILES[ss.agent_key]['name']}…", key="side_prompt")
+        if side_prompt:
+            state.submit_prompt(side_prompt)  # answered in the AI agent tab, which opens automatically
+        st.caption("Your question is answered in the 🤖 AI agent tab.")
 
         st.html(ui.side_heading("Recent conversations"))
         convs = state.history()
@@ -52,7 +60,7 @@ def render(settings) -> str:
             active = conv["id"] == ss.active_conv
             st.button(f"{icon}  {conv['title']}", key=f"conv-{conv['id']}", width="stretch", on_click=_open,
                       args=(conv["id"],), type="tertiary" if not active else "secondary",
-                      help=f"{n} question(s) · started {conv['created']} · "
+                      help=f"Open this chat · {n} question(s) · started {conv['created']} · "
                            f"{AGENT_PROFILES.get(conv['agent'], {}).get('name', '')}")
         if convs:
             st.caption("History is kept for this browser session.")

@@ -46,12 +46,14 @@ def _get_agent(model_name: str, profile: str):
     return ss[key]
 
 
-def _send_feedback(run_id: str, score: int) -> None:
+def _send_feedback(msg: dict, score: int) -> None:
+    """Record 👍/👎 on the answer's LangSmith trace (callback)."""
     from langsmith import Client
 
     try:
-        Client().create_feedback(run_id, key="user_rating", score=score)
-        st.toast("Feedback sent to LangSmith ✅")
+        Client().create_feedback(msg["run_id"], key="user_rating", score=score)
+        msg["feedback"] = score
+        st.toast("Thanks — your rating was sent to LangSmith ✅")
     except Exception as exc:  # noqa: BLE001 - best-effort UI action
         st.toast(f"Could not send feedback: {exc}")
 
@@ -71,34 +73,34 @@ def _slug(text: str) -> str:
 
 
 def _message_actions(i: int, m: dict, settings, model_name: str) -> None:
-    meta = []
-    if m.get("tools"):
-        meta.append("🔧 " + " → ".join(m["tools"]))
-    if m.get("usage"):
-        u = m["usage"]
-        meta.append(f"🪙 {u['total_tokens']:,} tokens · {u['llm_calls']} LLM calls")
-    if meta:
-        st.caption("  ·  ".join(meta))
+    """Footer under an answer: what the agent did, then clearly labelled actions."""
+    st.html(ui.answer_meta(m))
     if m.get("error"):
-        st.button("🔁 Resend", key=f"resend-{i}", on_click=_resend, args=(i,), type="primary")
+        st.button("🔁 Resend this question", key=f"resend-{i}", on_click=_resend, args=(i,), type="primary",
+                  help="Ask the same question again (the agent will try the free models in turn)")
         return
-    cols = st.columns([1.3, 1.3, 1.3, 0.5, 0.5, 2])
-    for pdf in m.get("pdfs", []):
-        p = reports.config.REPORTS_DIR / pdf
+    bar = st.container(horizontal=True, gap="small", key=f"actions-{i}")
+    slug = _slug(m["content"][:40])
+    bar.download_button("📄 Download PDF report", lambda: _answer_pdf(m, model_name), file_name=f"{slug}.pdf",
+                        mime="application/pdf", key=f"dl-pdf-{i}", on_click="ignore", width="content",
+                        help="News-ready PDF: this answer plus live data tables and charts for the city")
+    bar.download_button("📝 Download text (.md)", m["content"], file_name=f"{slug}.md", mime="text/markdown",
+                        key=f"dl-md-{i}", on_click="ignore", width="content",
+                        help="This answer as a Markdown text file you can edit or paste anywhere")
+    for j, pdf in enumerate(m.get("pdfs", [])):
+        p = config.REPORTS_DIR / pdf
         if p.exists():
-            cols[0].download_button("📄 Agent PDF", p.read_bytes(), file_name=pdf, mime="application/pdf",
-                                    key=f"dl-agentpdf-{i}", width="stretch")
-    if not m.get("error"):
-        cols[1].download_button("📑 Answer → PDF", lambda: _answer_pdf(m, model_name),
-                                file_name=f"{_slug(m['content'][:40])}.pdf", mime="application/pdf",
-                                key=f"dl-pdf-{i}", on_click="ignore", width="stretch")
-        cols[2].download_button("⬇ Markdown", m["content"], file_name=f"{_slug(m['content'][:40])}.md",
-                                mime="text/markdown", key=f"dl-md-{i}", on_click="ignore", width="stretch")
+            bar.download_button("📎 Agent's saved report", p.read_bytes(), file_name=pdf, mime="application/pdf",
+                                key=f"dl-agentpdf-{i}-{j}", on_click="ignore", width="content",
+                                help="The PDF the agent saved to the report library during this answer")
     if m.get("run_id") and settings.has_langsmith:
-        if cols[3].button("👍", key=f"up-{i}"):
-            _send_feedback(m["run_id"], 1)
-        if cols[4].button("👎", key=f"down-{i}"):
-            _send_feedback(m["run_id"], 0)
+        if m.get("feedback") is None:
+            bar.button("👍 Helpful", key=f"up-{i}", on_click=_send_feedback, args=(m, 1), width="content",
+                       help="Rate this answer as helpful (sent to LangSmith for evaluation)")
+            bar.button("👎 Not helpful", key=f"down-{i}", on_click=_send_feedback, args=(m, 0), width="content",
+                       help="Rate this answer as not helpful (sent to LangSmith for evaluation)")
+        else:
+            bar.html(f'<span class="ans-rated">{"👍" if m["feedback"] else "👎"} Rated — thank you</span>')
 
 
 def _context_panel(loc_dict: dict) -> None:
@@ -208,9 +210,10 @@ def _run(prompt: str, settings, model_name: str, profile: str) -> None:
             run_id = str(runs.traced_runs[-1].id)
     usage = tracker.summary().as_dict()
     focus = None if error else wagent.focus_from_calls(calls)
+    now = state.now_local()
     conv["messages"].append({"role": "assistant", "content": answer, "run_id": run_id, "usage": usage, "error": error,
                              "tools": tools_used, "pdfs": pdfs, "focus": focus, "model": used_model,
-                             "prompt": prompt})
+                             "prompt": prompt, "time": f"{now:%H:%M} {state.tz_label(now)}"})
     ss.usage_log.append({"question": prompt[:80], "agent": AGENT_PROFILES[profile]["name"], "model": used_model,
                          **{k: usage[k] for k in ("input_tokens", "output_tokens", "total_tokens", "llm_calls")},
                          "tools": ", ".join(tools_used), "status": "error" if error else "ok", "run_id": run_id})
@@ -251,12 +254,17 @@ def render(settings, model_name: str, city_hint: str) -> None:
         thread = st.container()  # messages render here, always above the input box
         with thread:
             for i, m in enumerate(conv["messages"]):
-                with st.chat_message(m["role"], avatar="🧑" if m["role"] == "user" else spec["icon"]):
+                if m["role"] == "user":
+                    with st.chat_message("user", avatar="🧑"), st.container(key=f"msguser-{i}"):
+                        st.markdown(m["content"].replace("$", "\\$"))
+                    continue
+                with st.chat_message("assistant", avatar=spec["icon"]), st.container(key=f"msgai-{i}"):
+                    st.html(ui.answer_header(spec["name"], m.get("model", ""), m.get("time", ""), m.get("error")))
                     st.markdown(m["content"].replace("$", "\\$"))  # show $ literally (no LaTeX math)
-                    if m["role"] == "assistant":
-                        m.setdefault("loc", ss.loc if m.get("focus") else None)
-                        _message_actions(i, m, settings, model_name)
-        prompt = st.chat_input(f"Message {spec['name']}…") or clicked or ss.pop("resend_prompt", None)
+                    m.setdefault("loc", ss.loc if m.get("focus") else None)
+                    _message_actions(i, m, settings, model_name)
+        prompt = (st.chat_input(f"Message {spec['name']}…", key="main_prompt") or clicked
+                  or ss.pop("resend_prompt", None) or ss.pop("pending_prompt", None))
         if prompt:
             if not settings.has_llm:
                 st.error("The AI agent needs `GOOGLE_API_KEY` in the `.env` file. Open ⚙️ Configuration in the "

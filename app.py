@@ -14,13 +14,25 @@ from weather_agent import config
 
 st.set_page_config(page_title=f"{config.PRODUCT_NAME} · {config.COMPANY_NAME}", page_icon="⛈️", layout="wide",
                    initial_sidebar_state="auto")  # open on desktop, tucked away on phones
+
+# ---- first paint: theme styles + loading skeleton, BEFORE the heavy AI libraries are imported -------------
+# The skeleton covers Streamlit's half-built page while live data loads; skeleton.ready() at the very end
+# of this script fades it out (and on later reruns it stays hidden).
+from weather_agent.ui import skeleton, theme  # noqa: E402  (lightweight modules)
+
+_choice = st.session_state.get("theme_choice") or (
+    theme.THEMES[1] if st.query_params.get("theme") == "light" else theme.THEMES[0])
+st.html(theme.build_css("light" if _choice == theme.THEMES[1] else "dark"))
+st.html(skeleton.overlay(config.PRODUCT_NAME, config.COMPANY_NAME,
+                         (st.session_state.get("loc") or {}).get("name", "Lahore")))
+
 config.load_streamlit_secrets(st.secrets)  # Cloud fallback only; local keys come from .env
 config.ensure_dirs()
 
 from weather_agent import service, vector_store, weather_api  # noqa: E402
 from weather_agent.pakistan import PAKISTAN_CITIES  # noqa: E402
 from weather_agent.ui import components as ui  # noqa: E402
-from weather_agent.ui import state, theme  # noqa: E402
+from weather_agent.ui import state  # noqa: E402
 from weather_agent.ui.views import analyst, dashboard, library, radar, sidebar, telemetry  # noqa: E402
 from weather_agent.weather_api import Location, WeatherAPIError  # noqa: E402
 
@@ -30,8 +42,7 @@ state.init(st.query_params.get("theme"))
 moved_to = state.apply_pending_focus()  # agent answer → move the whole portal to that city
 
 mode = "light" if state.is_light() else "dark"
-pal = theme.palette(mode)
-st.html(theme.build_css(mode))
+pal = theme.palette(mode)  # styles were already sent at first paint (top of this file)
 
 model_name = sidebar.render(settings)
 if moved_to:
@@ -108,9 +119,9 @@ ss.recent = [ss.loc] + [r for r in ss.recent if Location(**r).label != loc.label
 if len(ss.recent) > 1:
     cmd.pills("🕘 Recent", [Location(**r).label for r in ss.recent[1:]], key="recent_pick", on_change=_on_recent)
 
-tab_dash, tab_ai, tab_radar, tab_dl, tab_archive, tab_tele = st.tabs(
-    ["🌤  Dashboard", "🤖  AI agent", "🛰  Pakistan radar", "📥  Downloads", "🔎  Archive", "📊  Telemetry"],
-    key="main_tab")  # stable identity: the open tab survives reruns (e.g. after an agent answer)
+# key: the open tab survives reruns; on_change="rerun": the server tracks which tab is open, so the
+# app can bring the AI agent tab to the front (sidebar question, New conversation, opening a chat)
+tab_dash, tab_ai, tab_radar, tab_dl, tab_archive, tab_tele = st.tabs(state.TABS, key="main_tab", on_change="rerun")
 
 with tab_dash:
     try:
@@ -132,3 +143,4 @@ with tab_tele:
     telemetry.render(settings)
 
 st.html(ui.footer(config.COMPANY_NAME, config.PRODUCT_NAME))
+st.html(skeleton.ready())  # last element: page fully drawn -> fade the loading screen out

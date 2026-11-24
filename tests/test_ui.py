@@ -55,6 +55,13 @@ def test_city_names_are_escaped(snapshot):
     assert "<script>" not in html and "&lt;script&gt;" in html
 
 
+def test_aqi_badge_in_tile_uses_short_label_with_full_hover_text(snapshot):
+    snapshot.air["category"] = "Unhealthy for sensitive groups"
+    html = components.tiles(snapshot)
+    assert ">Sensitive groups</span>" in html
+    assert 'title="Unhealthy for sensitive groups"' in html
+
+
 def test_status_pill_has_label_not_colour_only():
     pill = components.status_pill("High")
     assert "High" in pill and "▲" in pill
@@ -98,6 +105,17 @@ def test_css_differs_per_theme_and_has_no_tag_text():
         assert not re.search(r"<[/A-Za-z!]", inner)
     assert theme.build_css("dark") != theme.build_css("light")
     assert 'stExpandSidebarButton' in theme.build_css("dark")  # re-open control stays styled & visible
+
+
+@pytest.mark.parametrize("mode", ["dark", "light"])
+def test_skeleton_overlay_css_hides_when_ready_with_failsafe(mode):
+    from weather_agent.ui import skeleton
+
+    css = theme.build_css(mode)
+    assert "body:has(.nc-ready) .nc-boot" in css  # fades out when the last element arrives
+    assert "nc-failsafe" in css and "40s" in css  # never blocks the page if the script stops early
+    html = skeleton.overlay("NeuralCast", "Neural ThinkPad", "<Lahore>")
+    assert "nc-loader" in html and "&lt;Lahore&gt;" in html and "<Lahore>" not in html
 
 
 def test_html_table_escapes_but_allows_trusted_html_columns():

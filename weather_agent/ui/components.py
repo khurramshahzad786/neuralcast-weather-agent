@@ -38,12 +38,17 @@ def _hhmm(iso: str | None) -> str:
     return iso[-5:]
 
 
-def status_pill(level: str, kind: str = "risk") -> str:
+SHORT_LABELS = {"Unhealthy for sensitive groups": "Sensitive groups", "Very unhealthy": "Very unhealthy"}
+
+
+def status_pill(level: str, kind: str = "risk", short: bool = False) -> str:
+    """Coloured badge with icon + text. ``short`` uses a compact label (full text stays in the hover title)."""
     color = risk_color(level) if kind == "risk" else aqi_color(level)
     cls = "warning" if color == STATUS["warning"] else ""
     glyph = RISK_GLYPH.get(level, "●") if kind == "risk" else "●"
-    return (f'<span class="wt-status {cls}" style="background:{color}">'
-            f'<span aria-hidden="true">{glyph}</span>{_e(level)}</span>')
+    text = SHORT_LABELS.get(level, level) if short else level
+    return (f'<span class="wt-status {cls}" style="background:{color}" title="{_e(level)}">'
+            f'<span aria-hidden="true">{glyph}</span>{_e(text)}</span>')
 
 
 def sidebar_brand(company: str, product: str, tagline: str, owner: str) -> str:
@@ -57,6 +62,41 @@ def sidebar_brand(company: str, product: str, tagline: str, owner: str) -> str:
         f'<div><div class="nt-name">{_e(owner)}</div><div class="nt-role">{_e(company)} workspace</div></div>'
         '<span class="nt-online" title="online"></span></div>'
     )
+
+
+TOOL_LABELS = {
+    "get_live_weather": "🌡 Live weather", "get_rain_storm_forecast": "🌧 Rain & storm forecast",
+    "get_air_quality": "🌫 Air quality", "pakistan_rain_storm_scan": "🇵🇰 Pakistan scan",
+    "get_recent_earthquakes": "🌍 Earthquakes (USGS)", "save_analysis_report": "📄 Saved PDF report",
+    "search_past_analyses": "🔎 Archive search", "task": "🧑‍🔬 Sub-agent", "write_todos": "📝 Planning",
+}
+
+
+def answer_header(agent: str, model: str, when: str, error: bool | None = None) -> str:
+    bits = [f'<b>{_e(agent)}</b>']
+    if model:
+        bits.append(f'<span title="Model that answered">{_e(model)}</span>')
+    if when:
+        bits.append(f'<span title="Your local time">🕒 {_e(when)}</span>')
+    state = '<span class="ans-flag bad">Not answered</span>' if error else '<span class="ans-flag ok">Answered</span>'
+    return f'<div class="ans-head">{" · ".join(bits)}{state}</div>'
+
+
+def answer_meta(m: dict[str, Any]) -> str:
+    """Plain-language strip: which live data sources the agent used, and what it cost."""
+    seen: list[str] = []
+    for t in m.get("tools") or []:
+        label = TOOL_LABELS.get(t, t)
+        if label not in seen:
+            seen.append(label)
+    chips = "".join(f'<span class="ans-chip">{_e(s)}</span>' for s in seen)
+    u = m.get("usage") or {}
+    cost = (f'<span class="ans-chip muted" title="Tokens processed by Gemini for this answer">'
+            f'{u.get("total_tokens", 0):,} tokens · {u.get("llm_calls", 0)} AI calls</span>') if u else ""
+    if not chips and not cost:
+        return ""
+    head = '<span class="ans-label">Data used</span>' if chips else ""
+    return f'<div class="ans-meta">{head}{chips}{cost}</div>'
 
 
 def run_status_pill(status: str | None) -> str:
@@ -303,7 +343,7 @@ def tiles(snap) -> str:
         _tile("Air humidity", icons.droplet(26), f"{_fmt(hum)}<small>%</small>",
               f"Dew point {_fmt(dew, 1)}°C", _bar(hum, "#3987e5")),
         _tile("Air quality · US AQI", icons.leaf(26), f"{_fmt(aqi)}",
-              f"{status_pill(a.get('category', 'Unknown'), 'aqi')}<br>PM2.5 {_fmt(a.get('pm2_5'), 1)} µg/m³",
+              f"{status_pill(a.get('category', 'Unknown'), 'aqi', short=True)}<br>PM2.5 {_fmt(a.get('pm2_5'), 1)} µg/m³",
               _bar(aqi_pct, aqi_color(a.get("category", "")))),
         _tile("Pressure", icons.gauge_glyph(26), f"{_fmt(c.get('pressure_hpa'))}<small>hPa</small>",
               f"{arrow} {trend:+.1f} hPa over {o.get('hours', 0)} h"),

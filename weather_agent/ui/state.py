@@ -16,9 +16,24 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from ..pakistan import PAKISTAN_CITIES
 from ..weather_api import Location, WeatherAPIError, geocode
+from .theme import THEMES as _THEMES
 
 HOUR_OPTIONS = [6, 12, 24, 48, 72]
-THEMES = ["🌙 Dark", "☀️ Light"]
+THEMES = list(_THEMES)
+TABS = ["🌤  Dashboard", "🤖  AI agent", "🛰  Pakistan radar", "📥  Downloads", "🔎  Archive", "📊  Telemetry"]
+AI_TAB = TABS[1]
+
+
+def open_ai_tab() -> None:
+    """Bring the AI agent tab to the front (safe from callbacks and before the tabs are drawn)."""
+    st.session_state.main_tab = AI_TAB
+
+
+def submit_prompt(prompt: str) -> None:
+    """Queue a question (e.g. typed in the sidebar) for the AI agent tab and show that tab."""
+    if prompt and prompt.strip():
+        st.session_state.pending_prompt = prompt.strip()
+        open_ai_tab()
 
 
 # ---------------------------------------------------------------- user's local time

@@ -63,6 +63,14 @@ def test_app_renders_portal_without_errors(app):
     assert "20 km N of Quetta" in html  # seismic section
 
 
+def test_loading_skeleton_first_and_ready_marker_last(app):
+    htmls = [str(getattr(el, "proto", el)) for el in app.get("html")]
+    overlay = next(i for i, h in enumerate(htmls) if "nc-boot" in h and "nc-sk-hero" in h)
+    header = next(i for i, h in enumerate(htmls) if "wt-topbar" in h)
+    assert overlay < header  # loading screen is drawn before any real content
+    assert "nc-ready" in htmls[-1]  # very last element: page fully drawn -> overlay fades out
+
+
 def test_enterprise_sidebar(app):
     html = _html(app)
     assert "Neural ThinkPad" in html and "Khurram Shahzad" in html and "NeuralCast" in html
@@ -176,7 +184,7 @@ def test_overloaded_model_falls_back_automatically(env, monkeypatch):
 
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
-    at.chat_input[0].set_value("Rain in Lahore?").run()
+    at.chat_input(key="main_prompt").set_value("Rain in Lahore?").run()
     assert not at.exception, at.exception
     last = at.session_state.conversations[at.session_state.active_conv]["messages"][-1]
     assert not last["error"] and last["content"] == "Lahore: clear, no rain."
@@ -194,7 +202,7 @@ def test_failed_chat_offers_resend(env, monkeypatch):
     monkeypatch.setattr(analyst, "_get_agent", lambda model, profile: busy)
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
-    at.chat_input[0].set_value("Rain in Lahore?").run()
+    at.chat_input(key="main_prompt").set_value("Rain in Lahore?").run()
     msgs = at.session_state.conversations[at.session_state.active_conv]["messages"]
     assert msgs[-1]["error"] and "overloaded" in msgs[-1]["content"] and "not a problem with your API key" in msgs[-1]["content"]
     resend = next(b for b in at.button if "Resend" in b.label)
@@ -206,6 +214,37 @@ def test_failed_chat_offers_resend(env, monkeypatch):
     assert not at.exception, at.exception
     msgs = at.session_state.conversations[at.session_state.active_conv]["messages"]
     assert [m["role"] for m in msgs] == ["user", "assistant"] and msgs[-1]["content"] == "Now it works."
+
+
+def test_prompt_from_sidebar_is_answered_in_ai_tab(env, monkeypatch):
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from tests.test_agent import ScriptedChatModel, _ai
+    from weather_agent import agent as wagent
+    from weather_agent.ui import state
+    from weather_agent.ui.views import analyst
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key-not-used")
+    graph = wagent.build_agent(llm=ScriptedChatModel(script=[_ai("## Lahore\n| City | Temp |\n|---|---|\n| Lahore | 21 |")]),
+                               model_name="scripted", checkpointer=InMemorySaver())
+    monkeypatch.setattr(analyst, "_get_agent", lambda model, profile: graph)
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.sidebar.chat_input(key="side_prompt").set_value("Weather in Lahore?").run()
+    assert not at.exception, at.exception
+    assert at.session_state.main_tab == state.AI_TAB  # the AI agent tab is brought to the front
+    msgs = at.session_state.conversations[at.session_state.active_conv]["messages"]
+    assert msgs[0]["content"] == "Weather in Lahore?" and msgs[-1]["content"].startswith("## Lahore")
+    labels = [b.label for b in at.get("download_button")]
+    assert "📄 Download PDF report" in labels and "📝 Download text (.md)" in labels  # clear, labelled actions
+    assert "ans-head" in _html(at)
+
+
+def test_new_conversation_opens_ai_tab(app):
+    from weather_agent.ui import state
+
+    app.sidebar.button(key="new_conv").click().run()
+    assert app.session_state.main_tab == state.AI_TAB
 
 
 def test_chat_answer_updates_whole_portal(env, monkeypatch):
@@ -226,7 +265,7 @@ def test_chat_answer_updates_whole_portal(env, monkeypatch):
 
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
-    at.chat_input[0].set_value("Weather in Karachi now?").run()
+    at.chat_input(key="main_prompt").set_value("Weather in Karachi now?").run()
     assert not at.exception, at.exception
     assert at.session_state.loc["name"] == "Karachi"
     conv = at.session_state.conversations[at.session_state.active_conv]
