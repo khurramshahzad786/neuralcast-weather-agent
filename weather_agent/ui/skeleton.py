@@ -75,14 +75,14 @@ body:has(.nc-ready) .nc-boot {{ opacity: 0; visibility: hidden; pointer-events: 
 @keyframes nc-failsafe {{ to {{ opacity: 0; visibility: hidden; pointer-events: none; }} }}
 .nc-ready {{ display: none; }}
 .nc-sk-layout {{ display: flex; height: 100%; }}
-.nc-sk-side {{ width: 300px; flex-shrink: 0; padding: 26px 20px; border-right: 1px solid var(--border); background: var(--surface);
+.nc-sk-side {{ width: 300px; flex-shrink: 0; padding: 57px 20px 22px;  /* logos sit at the same height as the real page (57 px) */ border-right: 1px solid var(--border); background: var(--surface);
   display: flex; flex-direction: column; gap: 12px; }}
-.nc-sk-main {{ flex: 1; max-width: 1480px; margin: 0 auto; padding: 22px 32px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }}
+.nc-sk-main {{ flex: 1; max-width: 1480px; margin: 0 auto; padding: 38px 32px 22px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }}
 .nc-sk-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px; box-shadow: var(--shadow); }}
 .nc-sk-row {{ display: flex; align-items: center; gap: 12px; }}
 .nc-sk-col {{ display: flex; flex-direction: column; gap: 8px; }}
 .nc-sk-col.grow {{ flex: 1; }}
-.nc-sk-head {{ display: flex; align-items: center; gap: 14px; }}
+.nc-sk-head {{ display: flex; align-items: flex-start; gap: 14px; padding: 18px; }}
 .nc-sk-pills {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }}
 .nc-sk-search {{ display: grid; grid-template-columns: 1.5fr 1.5fr 1fr .7fr; gap: 14px; }}
 .nc-sk-tabs {{ display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; padding: 8px; }}
@@ -129,7 +129,7 @@ body:has(.nc-ready) .nc-boot {{ opacity: 0; visibility: hidden; pointer-events: 
 @keyframes nc-bar {{ 0% {{ transform: translateX(-110%); }} 100% {{ transform: translateX(260%); }} }}
 @media (max-width: 900px) {{
   .nc-sk-side {{ display: none; }}
-  .nc-sk-main {{ padding: 16px 12px; }}
+  .nc-sk-main {{ padding: 54px 12px 16px; }}  /* the real page leaves 3.4rem for the » sidebar button */
   .nc-sk-search {{ grid-template-columns: 1fr 1fr; }}
   .nc-sk-tabs {{ grid-template-columns: repeat(3, 1fr); }}
   .nc-sk-tiles {{ grid-template-columns: repeat(2, 1fr); }}

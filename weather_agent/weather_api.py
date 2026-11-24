@@ -10,21 +10,29 @@ Weather data by Open-Meteo.com, licensed CC BY 4.0. Free for non-commercial use.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
 from .pakistan import PAKISTAN_CITIES
 
+log = logging.getLogger(__name__)
+
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
-TIMEOUT_S = 15
+TIMEOUT_S = (5, 10)  # (connect, read) seconds per attempt; a healthy reply takes well under 1 s
+ATTEMPTS = 3  # shared cloud hosts (Streamlit Cloud) see occasional slow replies / 429s: retry briefly
+RETRY_BACKOFF_S = 0.6  # wait 0.6 s, then 1.2 s between attempts
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 CACHE_TTL_S = 600  # weather models update hourly; 10 min keeps data "live" but saves calls
+STALE_MAX_S = 6 * 3600  # if the service is down, serve the last good answer up to 6 h old
 MAX_FORECAST_HOURS = 72
 
 CURRENT_VARS = (
@@ -70,7 +78,42 @@ _session = requests.Session()
 _session.headers.update({"User-Agent": "weather-storm-agent/1.0"})
 
 
-def _get(url: str, params: dict[str, Any]) -> dict[str, Any]:
+def _source(url: str) -> str:
+    host = urlparse(url).hostname or url
+    return "Open-Meteo" if "open-meteo" in host else host
+
+
+def _fetch(url: str, params: dict[str, Any]) -> Any:
+    """One GET with short retries on timeouts, dropped connections, 429 and 5xx."""
+    source = _source(url)
+    for attempt in range(1, ATTEMPTS + 1):
+        last = attempt == ATTEMPTS
+        try:
+            resp = _session.get(url, params=params, timeout=TIMEOUT_S)
+        except requests.Timeout as exc:
+            if last:
+                raise WeatherAPIError(f"Network error: {source} did not answer in time (tried {ATTEMPTS}×). "
+                                      "The free service may be busy; please try again in a moment.") from exc
+        except requests.RequestException as exc:
+            if last:
+                raise WeatherAPIError(f"Network error: could not reach {source} (tried {ATTEMPTS}×). "
+                                      "Please try again in a moment.") from exc
+        else:
+            if resp.status_code == 200:
+                return resp.json()
+            if resp.status_code not in RETRY_STATUSES or last:
+                reason = ""
+                try:
+                    reason = resp.json().get("reason", "")
+                except (ValueError, AttributeError):
+                    pass
+                raise WeatherAPIError(f"{source} returned HTTP {resp.status_code} {reason}".strip())
+        log.warning("%s request failed (attempt %d/%d), retrying", source, attempt, ATTEMPTS)
+        time.sleep(RETRY_BACKOFF_S * attempt)
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _get(url: str, params: dict[str, Any]) -> Any:
     key = (url, tuple(sorted(params.items())))
     now = time.monotonic()
     with _cache_lock:
@@ -78,18 +121,15 @@ def _get(url: str, params: dict[str, Any]) -> dict[str, Any]:
         if hit and now - hit[0] < CACHE_TTL_S:
             return hit[1]
     try:
-        resp = _session.get(url, params=params, timeout=TIMEOUT_S)
-    except requests.RequestException as exc:
-        raise WeatherAPIError(f"Network error contacting Open-Meteo: {exc}") from exc
-    if resp.status_code != 200:
-        reason = ""
-        try:
-            reason = resp.json().get("reason", "")
-        except ValueError:
-            pass
-        raise WeatherAPIError(f"Open-Meteo returned HTTP {resp.status_code} {reason}".strip())
-    data = resp.json()
+        data = _fetch(url, params)
+    except WeatherAPIError:
+        if hit and now - hit[0] < STALE_MAX_S:  # service hiccup: keep showing the last good answer
+            log.warning("%s unavailable; serving cached data %.0f s old", _source(url), now - hit[0])
+            return hit[1]
+        raise
     with _cache_lock:
+        for k in [k for k, (t, _) in _cache.items() if now - t >= STALE_MAX_S]:
+            del _cache[k]  # keep the cache bounded
         _cache[key] = (now, data)
     return data
 

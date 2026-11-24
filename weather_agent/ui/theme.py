@@ -184,6 +184,9 @@ h1, h2, h3, h4, h5 {{ font-family: var(--sans); letter-spacing: -0.01em; color: 
 .st-key-head {{ position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
   box-shadow: var(--shadow); padding: 2px 4px; gap: 0 !important; }}
 .st-key-head .wt-topbar {{ background: transparent; border: 0; box-shadow: none; padding-right: 70px; }}
+@media (max-width: 1440px) {{  /* laptops (1366 px): keep the status pills on one row so the header matches the sidebar brand */
+  .st-key-head .wt-pills {{ gap: 6px; }} .st-key-head .wt-pill {{ padding: 5px 9px; }}
+}}
 .st-key-theme_btn {{ position: absolute !important; top: 12px; right: 14px; z-index: 5; width: auto !important; }}
 .st-key-theme_btn button {{ width: 44px; height: 44px; min-height: 44px; border-radius: 50% !important; padding: 0 !important;
   font-size: 1.25rem; background: var(--surface-2) !important; border: 1px solid var(--border) !important;
@@ -326,8 +329,13 @@ h1, h2, h3, h4, h5 {{ font-family: var(--sans); letter-spacing: -0.01em; color: 
 
 /* ---------- enterprise sidebar ---------- */
 [data-testid="stSidebar"] {{ background: {"linear-gradient(180deg,#ffffff,#f3f6fb)" if light else "linear-gradient(180deg,#0e1626,#0a0f1a)"} !important; }}
-[data-testid="stSidebar"] .block-container, [data-testid="stSidebarUserContent"] {{ padding-top: .6rem; }}
-.nt-brand {{ display:flex; align-items:center; gap: 12px; padding: 6px 2px 14px; border-bottom: 1px solid var(--border); }}
+/* Brand lines up with the header card: the collapse button floats in the corner instead of taking a 60 px
+   strip, the brand starts where the main header starts (1.4rem page padding + 1rem first-row gap) and its
+   divider meets the header card's bottom edge on desktop. */
+[data-testid="stSidebarHeader"] {{ position: absolute; top: 6px; right: 8px; height: auto; padding: 0; z-index: 5; }}
+[data-testid="stSidebar"] .block-container, [data-testid="stSidebarUserContent"] {{ padding-top: 2.4rem; }}
+.nt-brand {{ display:flex; align-items:flex-start; gap: 12px; padding: 19px 2px 14px; min-height: 125px; box-sizing: border-box;
+  border-bottom: 1px solid var(--border); }}
 .nt-logo {{ width: 46px; height: 46px; border-radius: 14px; display:flex; align-items:center; justify-content:center;
   background: linear-gradient(135deg, #0ea5e9, #6366f1); box-shadow: 0 6px 18px rgba(99,102,241,.35); flex-shrink: 0; }}
 .nt-company {{ font-weight: 800; font-size: 1.02rem; letter-spacing: .01em; color: var(--ink); }}

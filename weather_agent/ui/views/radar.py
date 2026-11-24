@@ -27,6 +27,7 @@ def render(pal: Palette) -> None:
         table, matrix = service.pakistan_scan(hours)
     except WeatherAPIError as exc:
         st.html(ui.empty(f"⚠ {exc}"))
+        st.button("↻ Try again", key="retry_radar", help="Run the Pakistan scan again")  # click = rerun
         return
     if not table:
         st.html(ui.empty("No data returned."))

@@ -129,6 +129,7 @@ with tab_dash:
     except WeatherAPIError as exc:
         snap = None
         st.html(ui.empty(f"⚠ {exc}"))
+        st.button("↻ Try again", key="retry_dash", help="Fetch the live weather again")  # click = rerun
     if snap:
         dashboard.render(snap, pal)
 with tab_ai:

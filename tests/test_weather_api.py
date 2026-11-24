@@ -7,7 +7,8 @@ from weather_agent import weather_api
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def _clear_cache(monkeypatch):
+    monkeypatch.setattr(weather_api, "RETRY_BACKOFF_S", 0)  # no real waiting between retries in tests
     weather_api.clear_cache()
     yield
     weather_api.clear_cache()
@@ -54,6 +55,50 @@ def test_network_error_raises(monkeypatch):
     monkeypatch.setattr(weather_api._session, "get", MagicMock(side_effect=requests.ConnectionError("down")))
     with pytest.raises(weather_api.WeatherAPIError, match="Network error"):
         weather_api.fetch_forecast(weather_api.Location("X", 0, 0, "Y"))
+
+
+def test_timeout_is_retried_then_succeeds(monkeypatch):
+    get = MagicMock(side_effect=[requests.ReadTimeout("slow"), _resp(503, {}), _resp(200, {"hourly": {}})])
+    monkeypatch.setattr(weather_api._session, "get", get)
+    assert weather_api.fetch_forecast(weather_api.Location("X", 0, 0, "Y")) == {"hourly": {}}
+    assert get.call_count == weather_api.ATTEMPTS
+
+
+def test_timeout_after_all_attempts_gives_friendly_message(monkeypatch):
+    get = MagicMock(side_effect=requests.ReadTimeout("HTTPSConnectionPool(...): Read timed out."))
+    monkeypatch.setattr(weather_api._session, "get", get)
+    with pytest.raises(weather_api.WeatherAPIError) as err:
+        weather_api.fetch_forecast(weather_api.Location("X", 0, 0, "Y"))
+    assert "did not answer in time" in str(err.value) and "HTTPSConnectionPool" not in str(err.value)
+    assert get.call_count == weather_api.ATTEMPTS
+
+
+def test_client_errors_are_not_retried(monkeypatch):
+    get = MagicMock(return_value=_resp(400, {"reason": "bad"}))
+    monkeypatch.setattr(weather_api._session, "get", get)
+    with pytest.raises(weather_api.WeatherAPIError):
+        weather_api.fetch_forecast(weather_api.Location("X", 0, 0, "Y"))
+    assert get.call_count == 1
+
+
+def test_stale_cache_served_when_service_is_down(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(weather_api.time, "monotonic", lambda: clock[0])
+    loc = weather_api.Location("X", 1, 2, "Y")
+    monkeypatch.setattr(weather_api._session, "get", MagicMock(return_value=_resp(200, {"hourly": {"time": []}})))
+    weather_api.fetch_forecast(loc, 6)
+    clock[0] += weather_api.CACHE_TTL_S + 1  # expired, but still within the stale window
+    monkeypatch.setattr(weather_api._session, "get", MagicMock(side_effect=requests.ConnectionError("down")))
+    assert weather_api.fetch_forecast(loc, 6) == {"hourly": {"time": []}}
+    clock[0] += weather_api.STALE_MAX_S  # too old now: the error surfaces
+    with pytest.raises(weather_api.WeatherAPIError, match="Network error"):
+        weather_api.fetch_forecast(loc, 6)
+
+
+def test_usgs_errors_name_the_right_service(monkeypatch):
+    monkeypatch.setattr(weather_api._session, "get", MagicMock(return_value=_resp(400, {})))
+    with pytest.raises(weather_api.WeatherAPIError, match="earthquake.usgs.gov returned HTTP 400"):
+        weather_api.get_json("https://earthquake.usgs.gov/fdsnws/event/1/query", {})
 
 
 def test_responses_are_cached(monkeypatch):
