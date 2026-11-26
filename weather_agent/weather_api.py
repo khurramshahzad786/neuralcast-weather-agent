@@ -1,4 +1,4 @@
-"""Open-Meteo client (free, no API key).
+"""Open-Meteo client (free, no API key), with MET Norway as backup forecast source.
 
 Endpoints used:
 - Geocoding:   https://geocoding-api.open-meteo.com/v1/search
@@ -27,12 +27,14 @@ GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
-TIMEOUT_S = (5, 10)  # (connect, read) seconds per attempt; a healthy reply takes well under 1 s
-ATTEMPTS = 3  # shared cloud hosts (Streamlit Cloud) see occasional slow replies / 429s: retry briefly
-RETRY_BACKOFF_S = 0.6  # wait 0.6 s, then 1.2 s between attempts
+TIMEOUT_S = (5, 8)  # (connect, read) seconds per attempt; a healthy reply takes well under 1 s
+ATTEMPTS = 2  # shared cloud hosts (Streamlit Cloud) see occasional slow replies / 429s: retry once,
+#               then the MET Norway backup answers (see _with_backup)
+RETRY_BACKOFF_S = 0.6  # pause before the retry
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 CACHE_TTL_S = 600  # weather models update hourly; 10 min keeps data "live" but saves calls
 STALE_MAX_S = 6 * 3600  # if the service is down, serve the last good answer up to 6 h old
+BREAKER_S = 60  # after a service fails all attempts, skip it for 60 s (backup source answers meanwhile)
 MAX_FORECAST_HOURS = 72
 
 CURRENT_VARS = (
@@ -75,32 +77,62 @@ class Location:
 _cache: dict[tuple, tuple[float, Any]] = {}
 _cache_lock = threading.Lock()
 _session = requests.Session()
-_session.headers.update({"User-Agent": "weather-storm-agent/1.0"})
+# MET Norway's terms require an identifying User-Agent with a contact/website.
+_session.headers.update({"User-Agent": "NeuralCast/1.0 (+https://github.com/khurramshahzad786/neuralcast-weather-agent)"})
+_down_until: dict[str, float] = {}  # service -> monotonic time until which we skip it (circuit breaker)
+
+
+def _host(url: str) -> str:
+    return urlparse(url).hostname or url
 
 
 def _source(url: str) -> str:
-    host = urlparse(url).hostname or url
-    return "Open-Meteo" if "open-meteo" in host else host
+    host = _host(url)
+    if "open-meteo" in host:
+        return "Open-Meteo"
+    return "MET Norway" if host == "api.met.no" else host
+
+
+def _trip(url: str) -> None:
+    """Service is down: skip it for BREAKER_S so pages fall back quickly instead of waiting on every request.
+
+    Keyed by service, not host: when Open-Meteo's forecast server is unreachable its air-quality and
+    geocoding servers usually are too, so they are skipped together."""
+    with _cache_lock:
+        _down_until[_source(url)] = time.monotonic() + BREAKER_S
+
+
+def is_down(source: str) -> bool:
+    """True while a data source is being skipped after failing (for status lights)."""
+    return _down_until.get(source, 0) > time.monotonic()
 
 
 def _fetch(url: str, params: dict[str, Any]) -> Any:
     """One GET with short retries on timeouts, dropped connections, 429 and 5xx."""
     source = _source(url)
+    wait = _down_until.get(source, 0) - time.monotonic()
+    if wait > 0:
+        raise WeatherAPIError(f"Network error: {source} is not responding right now; "
+                              f"trying it again in {max(1, round(wait))} s.")
     for attempt in range(1, ATTEMPTS + 1):
         last = attempt == ATTEMPTS
         try:
             resp = _session.get(url, params=params, timeout=TIMEOUT_S)
         except requests.Timeout as exc:
             if last:
+                _trip(url)
                 raise WeatherAPIError(f"Network error: {source} did not answer in time (tried {ATTEMPTS}×). "
                                       "The free service may be busy; please try again in a moment.") from exc
         except requests.RequestException as exc:
             if last:
+                _trip(url)
                 raise WeatherAPIError(f"Network error: could not reach {source} (tried {ATTEMPTS}×). "
                                       "Please try again in a moment.") from exc
         else:
-            if resp.status_code == 200:
+            if resp.status_code in (200, 203):  # MET answers 203 for a deprecated-but-working product
                 return resp.json()
+            if resp.status_code in RETRY_STATUSES and last:
+                _trip(url)
             if resp.status_code not in RETRY_STATUSES or last:
                 reason = ""
                 try:
@@ -113,7 +145,17 @@ def _fetch(url: str, params: dict[str, Any]) -> Any:
     raise AssertionError("unreachable")  # pragma: no cover
 
 
-def _get(url: str, params: dict[str, Any]) -> Any:
+def _stale(url: str, params: dict[str, Any]) -> Any | None:
+    """Last good answer for this request if it is younger than STALE_MAX_S, else None."""
+    with _cache_lock:
+        hit = _cache.get((url, tuple(sorted(params.items()))))
+    if hit and time.monotonic() - hit[0] < STALE_MAX_S:
+        log.warning("%s unavailable; serving cached data %.0f s old", _source(url), time.monotonic() - hit[0])
+        return hit[1]
+    return None
+
+
+def _get(url: str, params: dict[str, Any], allow_stale: bool = True) -> Any:
     key = (url, tuple(sorted(params.items())))
     now = time.monotonic()
     with _cache_lock:
@@ -123,7 +165,7 @@ def _get(url: str, params: dict[str, Any]) -> Any:
     try:
         data = _fetch(url, params)
     except WeatherAPIError:
-        if hit and now - hit[0] < STALE_MAX_S:  # service hiccup: keep showing the last good answer
+        if allow_stale and hit and now - hit[0] < STALE_MAX_S:  # hiccup: keep showing the last good answer
             log.warning("%s unavailable; serving cached data %.0f s old", _source(url), now - hit[0])
             return hit[1]
         raise
@@ -142,6 +184,22 @@ def get_json(url: str, params: dict[str, Any]) -> dict[str, Any]:
 def clear_cache() -> None:
     with _cache_lock:
         _cache.clear()
+        _down_until.clear()
+
+
+def _with_backup(url: str, params: dict[str, Any], backup) -> Any:
+    """Open-Meteo first; if it does not answer, the MET Norway backup; then the last good answer."""
+    try:
+        return _get(url, params, allow_stale=False)
+    except WeatherAPIError as primary:
+        try:
+            return backup()
+        except WeatherAPIError as exc:
+            log.warning("backup source failed too: %s", exc)
+        stale = _stale(url, params)
+        if stale is not None:
+            return stale
+        raise WeatherAPIError(f"{primary} The backup source (MET Norway) is not answering either.") from primary
 
 
 def search_cities(query: str, count: int = 8, country_code: str | None = None) -> list[Location]:
@@ -194,7 +252,9 @@ def fetch_forecast(loc: Location, hours: int = 24) -> dict[str, Any]:
         "timezone": loc.timezone or "auto",
         "wind_speed_unit": "kmh",
     }
-    return _get(FORECAST_URL, params)
+    from . import met_norway  # backup source; imported lazily (it imports this module)
+
+    return _with_backup(FORECAST_URL, params, lambda: met_norway.fetch_forecast(loc, hours))
 
 
 def daily_rows(forecast: dict[str, Any]) -> list[dict[str, Any]]:
@@ -232,7 +292,9 @@ def fetch_forecast_many(locs: list[Location], hours: int = 12) -> list[dict[str,
         "timezone": locs[0].timezone or "auto",
         "wind_speed_unit": "kmh",
     }
-    data = _get(FORECAST_URL, params)
+    from . import met_norway
+
+    data = _with_backup(FORECAST_URL, params, lambda: met_norway.fetch_forecast_many(locs, hours))
     return data if isinstance(data, list) else [data]
 
 

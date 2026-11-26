@@ -20,10 +20,12 @@ class CitySnapshot:
     air_hourly: list[dict[str, Any]] = field(default_factory=list)
     dust_storm_risk: str = "Low"
     daily: list[dict[str, Any]] = field(default_factory=list)
+    source: str = "Open-Meteo"  # "MET Norway" when the backup source answered
 
     def to_dict(self, include_hourly: bool = False) -> dict[str, Any]:
         out: dict[str, Any] = {
             "location": self.location.label,
+            "data_source": self.source,
             "coordinates": [self.location.latitude, self.location.longitude],
             "timezone": self.location.timezone,
             "current": self.current,
@@ -84,6 +86,7 @@ def get_snapshot_for(loc: Location, hours: int = 24) -> CitySnapshot:
         air_hourly=weather_api.hourly_rows(aq) if aq else [],
         dust_storm_risk=dust,
         daily=weather_api.daily_rows(forecast),
+        source=forecast.get("source", "Open-Meteo"),
     )
 
 
@@ -171,6 +174,7 @@ def pakistan_scan(hours: int = 12, cities: list[str] | None = None) -> tuple[lis
             "total_precip_mm": o["total_precip_mm"],
             "max_gust_kmh": o["max_gust_kmh"],
             "thunderstorm_hours": len(o["thunderstorm_hours"]),
+            "source": fc.get("source", "Open-Meteo"),
         })
     table.sort(key=lambda r: (r["storm_score"], r["max_rain_prob_pct"]), reverse=True)
     return table, matrix

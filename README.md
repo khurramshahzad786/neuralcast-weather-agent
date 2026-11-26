@@ -38,6 +38,8 @@ Why Open-Meteo and not the others:
 
 > Data licence: Open-Meteo data is CC BY 4.0. The app and PDFs credit "Weather data by Open-Meteo.com". Commercial use needs an Open-Meteo API subscription.
 
+**Backup source — MET Norway.** Streamlit Community Cloud shares servers (and outgoing IP addresses) between many apps, and Open-Meteo occasionally stops answering them for a short while. The client then retries once, skips Open-Meteo for 60 s and loads the forecast from [MET Norway Locationforecast](https://api.met.no/weatherapi/locationforecast/2.0/documentation) (free, no key, CC BY 4.0), converted to the same shape. MET has no air quality, gusts or rain probability outside Scandinavia, so those show as unavailable and the dashboard says which source is in use. If both fail, the last good answer (up to 6 h old) is shown; otherwise the page shows the error and retries by itself every 20 s.
+
 ---
 
 ## Architecture
@@ -51,6 +53,7 @@ flowchart LR
     M -->|task| S3[pakistan-monitor]
     M & S1 & S2 & S3 --> T[Weather tools]
     T --> OM[(Open-Meteo<br/>forecast · air quality · geocoding)]
+    T -. backup .-> MET[(MET Norway<br/>forecast)]
     T --> R[Reasoning base<br/>storm score · AQI · Beaufort · dust]
     M -->|save_analysis_report| PDF[PDF per analysis<br/>ReportLab + charts]
     PDF --> V[(Chroma vector DB<br/>Gemini embeddings)]
@@ -64,7 +67,8 @@ flowchart LR
 | [weather_agent/agent.py](weather_agent/agent.py) | `create_deep_agent` with Gemini, prompts, 3 sub-agents |
 | [weather_agent/tools.py](weather_agent/tools.py) | LangChain tools the agent calls |
 | [weather_agent/analysis.py](weather_agent/analysis.py) | **Reasoning base**: storm score, rain intensity, AQI bands, Beaufort, wind compass, dust-storm rule |
-| [weather_agent/weather_api.py](weather_agent/weather_api.py) | Open-Meteo client with a 10-minute cache |
+| [weather_agent/weather_api.py](weather_agent/weather_api.py) | Open-Meteo client: 10-minute cache, retry, circuit breaker, backup and stale fallback |
+| [weather_agent/met_norway.py](weather_agent/met_norway.py) | MET Norway backup forecast, converted to the Open-Meteo shape |
 | [weather_agent/service.py](weather_agent/service.py) | City snapshot, Pakistan scan, rule-based summary |
 | [weather_agent/reports.py](weather_agent/reports.py) | News-ready PDF (risk badge, analysis, tables, chart) |
 | [weather_agent/vector_store.py](weather_agent/vector_store.py) | Chroma store for saved analyses |
@@ -143,7 +147,7 @@ forecast window, recent searches as chips.
 | 🔎 Archive | Semantic (vector DB) or keyword search over saved analyses |
 | 📊 Telemetry | Token usage per run and agent; LangSmith info |
 
-Data sources: **Open-Meteo** (weather, AQI, geocoding — free, no key) and **USGS** earthquake catalogue (free, no key).
+Data sources: **Open-Meteo** (weather, AQI, geocoding — free, no key), **MET Norway** (backup forecast — free, no key) and **USGS** earthquake catalogue (free, no key).
 
 ## Reliability: Gemini overloads
 

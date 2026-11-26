@@ -174,7 +174,7 @@ def topbar(status: dict[str, bool], vectors: int | None, updated: str, product: 
 
     pills = [
         pill("OPEN-METEO", status.get("weather", True)),
-        pill("USGS QUAKES", status.get("weather", True)),
+        pill("USGS QUAKES", status.get("quakes", True)),
         pill("GEMINI", status.get("llm", False)),
         pill("LANGSMITH", status.get("langsmith", False)),
         pill("VECTOR DB", status.get("vectors", False), f" · {vectors}" if vectors is not None else ""),
@@ -494,5 +494,5 @@ def empty(message: str) -> str:
 
 def footer(company: str = "Neural ThinkPad", product: str = "NeuralCast") -> str:
     return (f'<div class="wt-foot">© {datetime.now().year} {_e(company)} · {_e(product)} · '
-            'Weather data by Open-Meteo.com (CC BY 4.0) · Earthquakes by USGS · AI: Google Gemini via LangChain '
+            'Weather data by Open-Meteo.com (CC BY 4.0), backup by MET Norway (CC BY 4.0) · Earthquakes by USGS · AI: Google Gemini via LangChain '
             'Deep Agents · Forecasts are probabilistic — follow PMD / NDMA advisories for official warnings.</div>')

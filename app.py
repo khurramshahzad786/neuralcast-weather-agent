@@ -32,7 +32,7 @@ config.ensure_dirs()
 from weather_agent import service, vector_store, weather_api  # noqa: E402
 from weather_agent.pakistan import PAKISTAN_CITIES  # noqa: E402
 from weather_agent.ui import components as ui  # noqa: E402
-from weather_agent.ui import state  # noqa: E402
+from weather_agent.ui import retry, state  # noqa: E402
 from weather_agent.ui.views import analyst, dashboard, library, radar, sidebar, telemetry  # noqa: E402
 from weather_agent.weather_api import Location, WeatherAPIError  # noqa: E402
 
@@ -79,7 +79,8 @@ def _topbar() -> None:
         vec_count = None
     now = state.now_local()
     st.html(ui.topbar(
-        {"weather": True, "llm": settings.has_llm, "langsmith": settings.has_langsmith, "vectors": vec_count is not None},
+        {"weather": not weather_api.is_down("Open-Meteo"), "quakes": not weather_api.is_down("earthquake.usgs.gov"),
+         "llm": settings.has_llm, "langsmith": settings.has_langsmith, "vectors": vec_count is not None},
         vec_count, f"{now:%a %d %b · %H:%M} {state.tz_label(now)}", config.PRODUCT_NAME, config.COMPANY_NAME,
     ))
 
@@ -128,8 +129,7 @@ with tab_dash:
         snap = service.get_snapshot_for(loc, hours)
     except WeatherAPIError as exc:
         snap = None
-        st.html(ui.empty(f"⚠ {exc}"))
-        st.button("↻ Try again", key="retry_dash", help="Fetch the live weather again")  # click = rerun
+        retry.failed("dash", exc, lambda: service.get_snapshot_for(loc, hours))  # heals itself when data is back
     if snap:
         dashboard.render(snap, pal)
 with tab_ai:

@@ -11,8 +11,10 @@ from ...pakistan import PAKISTAN_CITIES
 from ...weather_api import WeatherAPIError
 from .. import charts
 from .. import components as ui
+from .. import retry
 from ..theme import RISK_STATUS, Palette, risk_color
 from . import seismic
+from .dashboard import BACKUP_NOTICE
 
 
 def _rgb(hex_color: str) -> list[int]:
@@ -26,9 +28,10 @@ def render(pal: Palette) -> None:
     try:
         table, matrix = service.pakistan_scan(hours)
     except WeatherAPIError as exc:
-        st.html(ui.empty(f"⚠ {exc}"))
-        st.button("↻ Try again", key="retry_radar", help="Run the Pakistan scan again")  # click = rerun
+        retry.failed("radar", exc, lambda: service.pakistan_scan(hours))
         return
+    if any(r.get("source", "Open-Meteo") != "Open-Meteo" for r in table):
+        st.info(BACKUP_NOTICE, icon="🛰️")
     if not table:
         st.html(ui.empty("No data returned."))
         return

@@ -272,3 +272,32 @@ def test_chat_answer_updates_whole_portal(env, monkeypatch):
     assert conv["title"].startswith("Weather in Karachi")
     assert conv["messages"][-1]["content"].startswith("**Karachi**")
     assert any("Karachi" in b.label for b in at.sidebar.button)  # history entry
+
+
+def _hero_drawn(at) -> bool:
+    """True when the dashboard hero card is on the page (ignores the stylesheet, which names every class)."""
+    return any("wt-hero" in h and "<style" not in h for h in (str(getattr(el, "proto", el)) for el in at.get("html")))
+
+
+def test_backup_source_notice_on_dashboard(env, snapshot):
+    snapshot.source = "MET Norway"
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert not at.exception, at.exception
+    assert any("MET Norway" in i.value for i in at.info)
+    assert _hero_drawn(at)  # the dashboard is still drawn from the backup data
+
+
+def test_dashboard_error_retries_automatically_and_recovers(env, snapshot):
+    def down(loc, hours=24):
+        raise weather_api.WeatherAPIError("Network error: Open-Meteo did not answer in time")
+
+    env.setattr(service, "get_snapshot_for", down)
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert not at.exception, at.exception
+    assert "did not answer in time" in _html(at) and not _hero_drawn(at)
+    assert any(c.value.startswith("↻ Retrying automatically") for c in at.caption)
+    env.setattr(service, "get_snapshot_for", lambda loc, hours=24: snapshot)  # data source is back
+    at.button(key="retry_dash").click().run()
+    assert _hero_drawn(at) and not any("Retrying automatically" in c.value for c in at.caption)

@@ -12,7 +12,13 @@ from .. import state
 from . import seismic
 
 
+BACKUP_NOTICE = ("Open-Meteo is not responding, so this forecast comes from the backup source **MET Norway**. "
+                 "Air quality, wind gusts and rain probability return automatically when Open-Meteo is back.")
+
+
 def render(snap, pal: Palette) -> None:
+    if snap.source != "Open-Meteo":
+        st.info(BACKUP_NOTICE, icon="🛰️")
     st.html(ui.hero(snap))
     st.html(ui.tiles(snap))
 
