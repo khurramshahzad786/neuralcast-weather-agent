@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import secrets
 from datetime import datetime, timezone, tzinfo
 from pathlib import Path
 from typing import Any
@@ -198,8 +199,12 @@ def build_pdf(
     model_name: str = "",
     out_dir: Path | None = None,
     tz: tzinfo | None = None,
+    owner: str = "",
 ) -> Path:
-    """Render a news-ready PDF and return its path. ``tz`` = reader's time zone for timestamps."""
+    """Render a news-ready PDF and return its path. ``tz`` = reader's time zone for timestamps.
+
+    ``owner`` = visitor id of the browser session that created it; only that visitor (and the site
+    owner) can list it. Reports without an owner are visible to the site owner only."""
     out_dir = out_dir or config.REPORTS_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     now = datetime.now(timezone.utc)
@@ -207,7 +212,9 @@ def build_pdf(
     zone = local.strftime("%Z") or "UTC"
     if zone.startswith(("+", "-")):
         zone = f"UTC{zone}"
-    path = out_dir / f"{slugify(analysis_name)}_{now:%Y%m%d-%H%M%S}.pdf"
+    # random suffix: all visitors share this folder, so two reports with the same title in the same second
+    # must never get the same file (that would hand one visitor's report to the other)
+    path = out_dir / f"{slugify(analysis_name)}_{now:%Y%m%d-%H%M%S}-{secrets.token_hex(4)}.pdf"
 
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle("TitleCenter", parent=styles["Title"], alignment=TA_CENTER, fontSize=18))
@@ -316,6 +323,7 @@ def build_pdf(
         "model": model_name or "",
         "created_at": now.isoformat(timespec="seconds"),
         "summary": (analysis_markdown or "")[:1500],
+        "owner": owner,
     })
     return path
 
@@ -353,7 +361,7 @@ def load_index(out_dir: Path | None = None) -> list[dict[str, Any]]:
     for p in list_reports(out_dir):
         stat = p.stat()
         meta = dict(entries.get(p.name) or {
-            "file": p.name, "analysis_name": p.stem.rsplit("_", 1)[0].replace("-", " ").title(),
+            "file": p.name, "analysis_name": p.stem.split("_", 1)[0].replace("-", " ").title(),
             "city": "", "storm_risk": "Unknown", "summary": "",
             "created_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(timespec="seconds"),
         })
@@ -361,6 +369,19 @@ def load_index(out_dir: Path | None = None) -> list[dict[str, Any]]:
         meta["path"] = p
         out.append(meta)
     return out
+
+
+def visible_index(owner: str, see_all: bool = False, out_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Reports a viewer may see: the ones their own session created, or all of them for the site owner.
+
+    Deny by default: an empty ``owner`` sees nothing, and untagged (older) reports are owner-only.
+    UI code must use this, not ``load_index``."""
+    entries = load_index(out_dir)
+    if see_all:
+        return entries
+    if not owner:
+        return []
+    return [e for e in entries if e.get("owner") == owner]
 
 
 def search_reports(entries: list[dict[str, Any]], query: str = "", risks: list[str] | None = None,

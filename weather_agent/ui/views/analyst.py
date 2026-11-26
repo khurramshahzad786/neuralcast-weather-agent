@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from pathlib import Path
 
 import streamlit as st
 from langchain_core.tracers.context import collect_runs
@@ -39,10 +40,11 @@ EXAMPLES = {
 
 def _get_agent(model_name: str, profile: str):
     ss = st.session_state
-    key = f"agent::{profile}::{model_name}"
+    owner = state.is_owner()  # the owner's agent may search every visitor's analyses
+    key = f"agent::{profile}::{model_name}::{'owner' if owner else 'visitor'}"
     if key not in ss:
         ss[key] = wagent.build_agent(model_name=model_name, checkpointer=ss.checkpointer, profile=profile,
-                                     tz=state.user_tz())
+                                     tz=state.user_tz(), owner=state.visitor_id(), see_all=owner)
     return ss[key]
 
 
@@ -55,7 +57,7 @@ def _send_feedback(msg: dict, score: int) -> None:
         msg["feedback"] = score
         st.toast("Thanks — your rating was sent to LangSmith ✅")
     except Exception as exc:  # noqa: BLE001 - best-effort UI action
-        st.toast(f"Could not send feedback: {exc}")
+        st.toast(f"Could not send feedback: {exc}" if state.is_owner() else "Could not send feedback right now.")
 
 
 def _answer_pdf(msg: dict, model_name: str) -> bytes:
@@ -64,7 +66,8 @@ def _answer_pdf(msg: dict, model_name: str) -> bytes:
     snap = service.get_snapshot_for(loc, 24)
     first = next((ln.strip("# *") for ln in msg["content"].splitlines() if ln.strip()), "")
     title = (first[:70] or f"{loc.name} weather analysis").strip()
-    path = reports.build_pdf(snap, title, msg["content"], model_name=model_name, tz=state.user_tz())
+    path = reports.build_pdf(snap, title, msg["content"], model_name=model_name, tz=state.user_tz(),
+                             owner=state.visitor_id())
     return path.read_bytes()
 
 
@@ -87,9 +90,11 @@ def _message_actions(i: int, m: dict, settings, model_name: str) -> None:
     bar.download_button("📝 Download text (.md)", m["content"], file_name=f"{slug}.md", mime="text/markdown",
                         key=f"dl-md-{i}", on_click="ignore", width="content",
                         help="This answer as a Markdown text file you can edit or paste anywhere")
+    mine = {e["file"] for e in reports.visible_index(state.visitor_id(), see_all=state.is_owner())} \
+        if m.get("pdfs") else set()
     for j, pdf in enumerate(m.get("pdfs", [])):
         p = config.REPORTS_DIR / pdf
-        if p.exists():
+        if pdf == Path(pdf).name and pdf in mine and p.exists():  # own reports only, no paths
             bar.download_button("📎 Agent's saved report", p.read_bytes(), file_name=pdf, mime="application/pdf",
                                 key=f"dl-agentpdf-{i}-{j}", on_click="ignore", width="content",
                                 help="The PDF the agent saved to the report library during this answer")
@@ -161,8 +166,9 @@ def _friendly_error(exc: BaseException, tried: list[str]) -> str:
         why = "The selected Gemini model is not available for this key. Pick another model in Configuration."
     else:
         why = "Unexpected error while running the agent."
+    details = f"Details: `{type(exc).__name__}: {text[:300]}`\n\n" if state.is_owner() else ""  # raw: owner only
     return (f"⚠️ **The agent could not answer.** {why}\n\nModels tried: {', '.join(tried)}.\n\n"
-            f"Details: `{type(exc).__name__}: {text[:300]}`\n\nUse **🔁 Resend** to try again.")
+            f"{details}Use **🔁 Resend** to try again.")
 
 
 def _run(prompt: str, settings, model_name: str, profile: str) -> None:

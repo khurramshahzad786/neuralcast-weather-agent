@@ -73,14 +73,15 @@ def _toggle_theme() -> None:
 # ---------------------------------------------------------------- top bar (live clock in the user's time zone)
 @st.fragment(run_every="30s")
 def _topbar() -> None:
-    try:
-        vec_count = vector_store.count() if settings.has_llm else None
+    try:  # the light shows real health for everyone; the all-visitor total is owner-only
+        vec_total = vector_store.count() if settings.has_llm else None
     except Exception:  # noqa: BLE001 - status indicator only
-        vec_count = None
+        vec_total = None
+    vec_count = vec_total if state.is_owner() else None
     now = state.now_local()
     st.html(ui.topbar(
         {"weather": not weather_api.is_down("Open-Meteo"), "quakes": not weather_api.is_down("earthquake.usgs.gov"),
-         "llm": settings.has_llm, "langsmith": settings.has_langsmith, "vectors": vec_count is not None},
+         "llm": settings.has_llm, "langsmith": settings.has_langsmith, "vectors": vec_total is not None},
         vec_count, f"{now:%a %d %b · %H:%M} {state.tz_label(now)}", config.PRODUCT_NAME, config.COMPANY_NAME,
     ))
 

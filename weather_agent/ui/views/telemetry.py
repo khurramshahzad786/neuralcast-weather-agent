@@ -1,4 +1,9 @@
-"""Telemetry tab: session token usage + LangSmith usage meter (project totals and recent traces)."""
+"""Telemetry tab.
+
+Everyone: token usage of THIS browser session only.
+Owner (after unlocking with ADMIN_PASSWORD): project-wide LangSmith usage meter (every visitor's runs,
+raw provider errors, cost) and the evaluation commands.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +27,8 @@ def _runs(project: str) -> list[dict]:
 
 
 def _langsmith(settings) -> None:
-    st.html(ui.section("LangSmith usage meter", f"project {settings.langsmith_project} · refreshed every minute"))
+    st.html(ui.section("LangSmith usage meter",
+                       f"owner only · all visitors · project {settings.langsmith_project} · refreshed every minute"))
     if not settings.has_langsmith:
         st.html(ui.empty("LangSmith is off. Add LANGSMITH_API_KEY (and optionally LANGSMITH_PROJECT) to .env, "
                          "then restart the app."))
@@ -62,7 +68,7 @@ def _langsmith(settings) -> None:
 
 def render(settings) -> None:
     log = st.session_state.usage_log
-    st.html(ui.section("Token usage", "this browser session · main agent + sub-agents"))
+    st.html(ui.section("Your token usage", "this browser session only · main agent + sub-agents"))
     if log:
         total = lambda k: sum(int(r.get(k) or 0) for r in log)  # noqa: E731
         st.html(ui.kpis([
@@ -77,11 +83,13 @@ def render(settings) -> None:
             ("tools", "Tools"),
         ]))
     else:
-        st.html(ui.empty("Ask the AI agent something to see token usage here."))
+        st.html(ui.empty("Ask the AI agent something to see your token usage here."))
+    st.caption("Only your own questions in this browser tab are counted; nothing from other visitors is shown.")
 
+    if not state.is_owner():  # project-wide data and developer tools: owner only
+        return
     _langsmith(settings)
-
-    st.html(ui.section("Evaluation", "LangSmith datasets & experiments"))
+    st.html(ui.section("Evaluation", "owner only · LangSmith datasets & experiments"))
     st.markdown("Run the offline evaluation suite from a terminal; results appear as experiments in LangSmith:")
-    st.code("python -m evals.run_eval            # LangSmith experiment\npython -m evals.run_eval --local    # local only",
-            language="bash")
+    st.code("python -m evals.run_eval            # LangSmith experiment\n"
+            "python -m evals.run_eval --local    # local only", language="bash")

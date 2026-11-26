@@ -28,6 +28,7 @@ QUAKES = [{"time_utc": "2026-07-14 10:00", "magnitude": 4.6, "class": "Light", "
 @pytest.fixture
 def env(monkeypatch, snapshot, tmp_path):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)  # owner tests set it explicitly
     monkeypatch.setattr(config, "REPORTS_DIR", tmp_path)
     monkeypatch.setattr(service, "get_snapshot_for", lambda loc, hours=24: snapshot)
     monkeypatch.setattr(service, "pakistan_scan", lambda hours=12, cities=None: ([PK_ROW], PK_MATRIX))
@@ -301,3 +302,87 @@ def test_dashboard_error_retries_automatically_and_recovers(env, snapshot):
     env.setattr(service, "get_snapshot_for", lambda loc, hours=24: snapshot)  # data source is back
     at.button(key="retry_dash").click().run()
     assert _hero_drawn(at) and not any("Retrying automatically" in c.value for c in at.caption)
+
+
+OWNER_PW = "test-owner-pass-123"  # test value only
+STATS = {"project": "p", "url": "https://smith.example/p", "run_count": 19, "total_tokens": 93715,
+         "prompt_tokens": 89305, "completion_tokens": 4410, "total_cost": 0.0305, "error_rate": 0.63,
+         "latency_p50_s": 6.0, "latency_p99_s": 59.0, "last_run": "2026-11-24T14:38:00+00:00"}
+
+
+@pytest.fixture
+def owner_env(env, monkeypatch, tmp_path, snapshot):
+    from weather_agent import access, observability, reports
+
+    access.reset_throttle()
+    monkeypatch.setenv("ADMIN_PASSWORD", OWNER_PW)
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setattr(observability, "project_stats", lambda project=None: STATS)
+    monkeypatch.setattr(observability, "recent_runs", lambda project=None, limit=15: [])
+    reports.build_pdf(snapshot, "Someone Elses Report", "private text", out_dir=tmp_path, owner="other-visitor")
+    return monkeypatch
+
+
+def _all_text(at) -> str:
+    parts = [_html(at)] + [m.value for m in at.markdown] + [c.value for c in at.code] + [c.value for c in at.caption]
+    return "\n".join(parts)
+
+
+def _unlock(at, password: str):
+    at.text_input(key="owner_pw").input(password)
+    next(b for b in at.button if "Unlock owner mode" in str(b.label)).click()
+    return at.run()
+
+
+def test_public_visitor_sees_only_their_own_data(owner_env):
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert not at.exception, at.exception
+    text = _all_text(at)
+    assert "Your token usage" in text
+    for leak in ("LangSmith usage meter", "Traced agent runs", "evals.run_eval", "Open project in LangSmith",
+                 "Someone Elses Report", "all visitors"):
+        assert leak not in text, leak
+    assert "your reports from this browser session" in text
+
+
+def test_owner_unlock_shows_owner_data_and_lock_hides_it(owner_env):
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    _unlock(at, "not-the-password")
+    assert any("Wrong password" in e.value for e in at.error)
+    assert "LangSmith usage meter" not in _all_text(at)
+    assert "owner_pw" not in at.session_state or at.session_state["owner_pw"] == ""  # wrong guess not kept
+
+    _unlock(at, OWNER_PW)
+    assert not at.exception, at.exception
+    text = _all_text(at)
+    assert "LangSmith usage meter" in text and "Traced agent runs" in text and "evals.run_eval" in text
+    assert "Someone Elses Report" in text and "all visitors (owner view)" in text
+    assert OWNER_PW not in text
+    assert "owner_pw" not in at.session_state or at.session_state["owner_pw"] == ""  # field wiped
+
+    at.button(key="owner_lock").click().run()
+    text = _all_text(at)
+    assert "LangSmith usage meter" not in text and "Someone Elses Report" not in text
+
+
+def test_owner_sign_in_hidden_without_admin_password(env, monkeypatch):
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert not [t for t in at.text_input if t.key == "owner_pw"]
+    assert any("no ADMIN_PASSWORD" in c.value for c in at.caption)
+
+
+def test_archive_search_shows_only_own_analyses(owner_env):
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.selectbox(key="arch_mode").set_value("Keyword")
+    at.text_input(key="arch_q").input("Someone").run()
+    assert not at.exception, at.exception
+    assert "Someone Elses Report" not in _all_text(at) and "No matching analyses" in _all_text(at)
+    _unlock(at, OWNER_PW)
+    at.text_input(key="arch_q").input("Someone").run()
+    assert "Someone Elses Report" in _all_text(at)

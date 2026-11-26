@@ -51,11 +51,14 @@ def render(snap, pal: Palette) -> None:
                              key=f"pdf-name-{snap.location.name}")
         if st.button("📄 Generate PDF report", type="primary", width="stretch"):
             text = service.auto_summary(snap)
-            path = reports.build_pdf(snap, name, text, model_name="rule-based", tz=state.user_tz())
+            path = reports.build_pdf(snap, name, text, model_name="rule-based", tz=state.user_tz(),
+                                     owner=state.visitor_id())
             try:
-                vector_store.add_analysis(name, snap.location.name, text, path.name, snap.outlook["storm_risk"])
+                vector_store.add_analysis(name, snap.location.name, text, path.name, snap.outlook["storm_risk"],
+                                          owner=state.visitor_id())
             except Exception as exc:  # noqa: BLE001 - PDF is saved even if vector indexing fails
-                st.warning(f"PDF saved, but vector indexing failed: {exc}")
+                st.warning(f"PDF saved, but vector indexing failed: {exc}" if state.is_owner() else
+                           "PDF saved. It could not be added to the search archive right now.")  # raw error: owner
             st.success(f"Saved {path.name}")
             st.download_button("⬇ Download PDF", path.read_bytes(), file_name=path.name,
                                mime="application/pdf", key="dash-dl", width="stretch")

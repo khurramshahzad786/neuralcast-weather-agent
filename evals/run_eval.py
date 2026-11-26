@@ -51,7 +51,7 @@ class ToolRecorder(BaseCallbackHandler):
 
 def make_target(model: str):
     def target(inputs: dict) -> dict:
-        graph = wagent.build_agent(model_name=model)
+        graph = wagent.build_agent(model_name=model, owner="eval", see_all=True)  # run by the owner
         usage, recorder = UsageTracker(), ToolRecorder()
         start = time.perf_counter()
         result = graph.invoke(

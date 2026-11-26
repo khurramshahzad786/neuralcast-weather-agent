@@ -56,7 +56,9 @@ def add_analysis(
     storm_risk: str,
     extra: dict[str, Any] | None = None,
     api_key: str | None = None,
+    owner: str = "",
 ) -> str | None:
+    """Index an analysis. ``owner`` = visitor id of the session that created it (see ``search``)."""
     store = get_store(api_key)
     if store is None:
         return None
@@ -66,22 +68,40 @@ def add_analysis(
         "pdf_file": pdf_file,
         "storm_risk": storm_risk,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "owner": owner,
     }
     for k, v in (extra or {}).items():
-        if isinstance(v, (str, int, float, bool)):
+        if k not in meta and isinstance(v, (str, int, float, bool)):  # extra can never overwrite owner
             meta[k] = v
     doc_text = f"{analysis_name}\nCity: {city}\nStorm risk: {storm_risk}\n\n{text}"
     ids = store.add_texts([doc_text], metadatas=[meta])
     return ids[0] if ids else None
 
 
-def search(query: str, k: int = 4, city: str | None = None, api_key: str | None = None) -> list[dict[str, Any]]:
+def search_filter(city: str | None, owner: str, see_all: bool) -> dict[str, Any] | None:
+    """Chroma ``where`` filter: the visitor's own analyses (optionally one city); everything for the owner."""
+    conds: list[dict[str, Any]] = []
+    if not see_all:
+        conds.append({"owner": owner})
+    if city:
+        conds.append({"city": city})
+    if not conds:
+        return None
+    return conds[0] if len(conds) == 1 else {"$and": conds}
+
+
+def search(query: str, k: int = 4, city: str | None = None, api_key: str | None = None,
+           owner: str = "", see_all: bool = False) -> list[dict[str, Any]]:
+    """Semantic search over the analyses this viewer may see (deny by default: no owner -> nothing)."""
+    if not see_all and not owner:
+        return []
     store = get_store(api_key)
     if store is None:
         return []
     kwargs: dict[str, Any] = {"k": k}
-    if city:
-        kwargs["filter"] = {"city": city}
+    where = search_filter(city, owner, see_all)
+    if where:
+        kwargs["filter"] = where
     results = store.similarity_search_with_relevance_scores(query, **kwargs)
     out = []
     for doc, score in results:

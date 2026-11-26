@@ -145,7 +145,7 @@ forecast window, recent searches as chips.
 | 🛰 Pakistan radar | Risk map, KPIs, city × hour heatmap, rankings, city board, earthquakes around Pakistan |
 | 📥 Downloads | **Data exports** for the current city (hourly CSV, 7-day CSV, air-quality CSV, full JSON, earthquakes CSV), Pakistan scan CSV, conversation transcript, plus the searchable **PDF library** |
 | 🔎 Archive | Semantic (vector DB) or keyword search over saved analyses |
-| 📊 Telemetry | Token usage per run and agent; LangSmith info |
+| 📊 Telemetry | Everyone: their own token usage in this browser session. Owner: also the LangSmith usage meter and evaluation commands |
 
 Data sources: **Open-Meteo** (weather, AQI, geocoding — free, no key), **MET Norway** (backup forecast — free, no key) and **USGS** earthquake catalogue (free, no key).
 
@@ -157,11 +157,30 @@ limit). This is on Google's side, not a key problem. The agent fails fast (60 s,
 3.1-flash-lite`, starting from whichever model is selected), resumes the interrupted run instead of starting over, and parks a busy model for
 10 minutes. If every model fails, the answer explains why and shows a **🔁 Resend** button.
 
-## LangSmith usage meter
+## Privacy: what visitors see vs. owner mode
 
-Telemetry → *LangSmith usage meter* reads your project through the LangSmith API: traced runs, tokens,
-success rate, p50/p99 latency, cost, and the latest traces (model, status, tokens, seconds, error),
-with a link to open the project. Every fallback attempt is its own trace, so overloads are visible.
+The portal is public, so each visitor sees **only their own data**, identified by their browser session
+(there is no login; a page refresh or a new tab starts a new session):
+
+| Data | Public visitor | Owner (after unlocking) |
+|---|---|---|
+| Chats, token usage | Their own session | Their own session |
+| PDF report library (Downloads) | Reports they created in this session | Every visitor's reports |
+| Archive search (keyword + vector DB), agent's `search_past_analyses` | Their own analyses | Everything |
+| LangSmith usage meter (all runs, tokens, success rate, latency, cost, raw errors) | Hidden | Shown in Telemetry |
+| Evaluation commands, LangSmith project name, archive size, raw error details | Hidden | Shown |
+
+**Owner mode:** set `ADMIN_PASSWORD` (at least 12 characters) in `.env` locally or in Streamlit Cloud
+**Secrets**, never in GitHub. Then open *Configuration → Owner access* in the sidebar and unlock. The
+password is compared in constant time and wiped from the session as soon as it is checked; wrong guesses pause sign-in
+(5 per session → 5 minutes; 30 across the app in 10 minutes → paused for everyone). **🔒 Lock owner mode**
+turns it off again; chats you had while unlocked stay in that browser tab, so close it on a shared
+computer. Without `ADMIN_PASSWORD`, owner mode is simply unavailable. Trade-off: because the app-wide
+pause also applies to you, someone guessing continuously can keep owner sign-in paused; use the
+LangSmith website meanwhile, or change `ADMIN_PASSWORD` and reboot the app.
+
+Reports and analyses are tagged with the creating session's random id. Older untagged reports are
+owner-only. Every fallback attempt is its own LangSmith trace, so overloads are visible in the meter.
 
 ## Tests
 
@@ -215,6 +234,8 @@ GEMINI_EMBEDDING_MODEL = "models/gemini-embedding-001"
 LANGSMITH_TRACING = "true"
 LANGSMITH_API_KEY = "your-real-langsmith-key"
 LANGSMITH_PROJECT = "weather-storm-agent"
+
+ADMIN_PASSWORD = ""   # your own long random password (12+ chars) unlocks owner mode; see Privacy
 ```
 
 How it works and what to keep in mind:

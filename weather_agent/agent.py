@@ -203,8 +203,13 @@ def build_agent(
     api_key: str | None = None,
     profile: str = "weather",
     tz=None,
+    owner: str = "",
+    see_all: bool = False,
 ):
     """Create the compiled Deep Agent graph for an agent profile.
+
+    ``owner`` (visitor id) / ``see_all`` (site owner) scope the report tools: what the agent saves
+    is tagged with the visitor, and its archive search only sees that visitor's analyses.
 
     ``api_key`` (an explicit Gemini key) is threaded into the LLM, the embeddings and the
     tools; it is never put in the shared process environment.
@@ -221,7 +226,8 @@ def build_agent(
         prompt = spec["prompt"] + FOCUSED_RULES.format(now=now, reasoning=REASONING_BASE)
     return create_deep_agent(
         model=llm,
-        tools=wtools.all_tools(model_name=str(name), api_key=api_key, only=spec["tools"], tz=tz),
+        tools=wtools.all_tools(model_name=str(name), api_key=api_key, only=spec["tools"], tz=tz,
+                               owner=owner, see_all=see_all),
         system_prompt=prompt,
         subagents=build_subagents() if spec["subagents"] else None,
         checkpointer=checkpointer,

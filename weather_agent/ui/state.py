@@ -6,6 +6,7 @@ conversation has its own LangGraph thread id, so the agent remembers context per
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone, tzinfo
@@ -78,6 +79,8 @@ def pk_location(name: str) -> dict:
 
 def init(query_theme: str | None) -> None:
     ss = st.session_state
+    ss.setdefault("visitor_id", secrets.token_hex(16))  # owns the reports/analyses made in this session
+    ss.setdefault("is_owner", False)
     ss.setdefault("checkpointer", InMemorySaver())
     ss.setdefault("conversations", {})
     ss.setdefault("usage_log", [])
@@ -88,6 +91,18 @@ def init(query_theme: str | None) -> None:
     ss.setdefault("agent_key", "weather")
     if not ss.get("active_conv") or ss.active_conv not in ss.conversations:
         new_conversation()
+
+
+def visitor_id() -> str:
+    """Random id of this browser session; tags the reports and analyses it creates.
+
+    Empty outside a session (e.g. a script): an empty owner can only ever be seen by the site owner."""
+    return st.session_state.get("visitor_id", "")
+
+
+def is_owner() -> bool:
+    """True after the owner unlocked owner mode with ADMIN_PASSWORD (see access.py)."""
+    return bool(st.session_state.get("is_owner"))
 
 
 def is_light() -> bool:

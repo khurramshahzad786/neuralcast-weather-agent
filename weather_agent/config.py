@@ -31,6 +31,7 @@ SECRET_KEYS = (
     "LANGSMITH_PROJECT",
     "LANGSMITH_TRACING",
     "LANGSMITH_ENDPOINT",
+    "ADMIN_PASSWORD",  # unlocks owner-only views (see access.py); never shown or logged
 )
 
 # Branding (override with env vars if the product is re-badged)

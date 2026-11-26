@@ -92,11 +92,18 @@ def _cards(entries: list[dict], prefix: str) -> None:
                 _download(e, f"{prefix}-{i}-{e['file']}")
 
 
+def _visible() -> list[dict]:
+    """Reports this viewer may see: their own session's, or every visitor's for the site owner."""
+    return reports.visible_index(state.visitor_id(), see_all=state.is_owner())
+
+
 def render_reports() -> None:
-    entries = reports.load_index()
-    st.html(ui.section("PDF report library", f"{len(entries)} analyses · news-feed ready"))
+    entries = _visible()
+    who = "all visitors (owner view)" if state.is_owner() else "your reports from this browser session"
+    st.html(ui.section("PDF report library", f"{len(entries)} analyses · {who}"))
     if not entries:
-        st.html(ui.empty("No reports yet. Publish one from the Dashboard, or ask the AI analyst for a report."))
+        st.html(ui.empty("No reports yet. Publish one from the Dashboard, or ask the AI agent for a report. "
+                         "Only reports you create in this browser session are listed here."))
         return
     c1, c2, c3, c4 = st.columns([3, 2, 2, 1.4])
     query = c1.text_input("Search reports", placeholder="name, city, risk, words in the analysis…", key="rep_q")
@@ -119,7 +126,8 @@ def render_reports() -> None:
 
 
 def render_archive(settings) -> None:
-    st.html(ui.section("Analysis archive", "semantic search (Chroma + Gemini embeddings) or keyword search"))
+    scope = "all visitors (owner view)" if state.is_owner() else "your analyses from this browser session"
+    st.html(ui.section("Analysis archive", f"semantic or keyword search · {scope}"))
     modes = ["Semantic (vector DB)", "Keyword"] if settings.has_llm else ["Keyword"]
     c1, c2, c3 = st.columns([4, 2, 2])
     q = c1.text_input("Search past analyses", placeholder="thunderstorm risk in Punjab · dust storm Karachi…", key="arch_q")
@@ -132,11 +140,13 @@ def render_archive(settings) -> None:
         return
     if mode.startswith("Semantic"):
         try:
-            hits = vector_store.search(q, k=8, city=city_f or None)
+            hits = vector_store.search(q, k=8, city=city_f or None, owner=state.visitor_id(),
+                                       see_all=state.is_owner())
         except Exception as exc:  # noqa: BLE001 - optional subsystem
-            st.error(f"Vector search failed: {exc}")
+            st.error(f"Vector search failed: {exc}" if state.is_owner() else
+                     "Semantic search is unavailable right now; try Keyword mode.")  # raw errors: owner only
             hits = []
-        index = {e["file"]: e for e in reports.load_index()}
+        index = {e["file"]: e for e in _visible()}
         entries = []
         for h in hits:
             e = dict(index.get(h.get("pdf_file") or "", {}))
@@ -146,7 +156,7 @@ def render_archive(settings) -> None:
             e.setdefault("size_kb", 0)
             entries.append(e)
     else:
-        entries = reports.search_reports(reports.load_index(), q, None, city_f or None)
+        entries = reports.search_reports(_visible(), q, None, city_f or None)
     st.caption(f"{len(entries)} result(s)")
     if not entries:
         st.html(ui.empty("No matching analyses."))
