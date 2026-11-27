@@ -134,6 +134,20 @@ def active() -> dict:
     return ss.conversations[ss.active_conv]
 
 
+def open_conversation(cid: str) -> None:
+    """Switch to a saved chat and show it in the AI agent tab (safe from callbacks)."""
+    ss = st.session_state
+    if cid not in ss.conversations:
+        return
+    # drop the empty draft we are leaving, so it never shows up as a phantom entry
+    current = ss.conversations.get(ss.get("active_conv") or "")
+    if current is not None and not current["messages"] and current["id"] != cid:
+        del ss.conversations[current["id"]]
+    ss.active_conv = cid
+    ss.agent_key = ss.conversations[cid]["agent"]
+    open_ai_tab()
+
+
 def set_title_from(prompt: str) -> None:
     conv = active()
     if conv["title"] == "New conversation":

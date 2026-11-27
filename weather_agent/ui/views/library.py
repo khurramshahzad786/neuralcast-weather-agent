@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pandas as pd
 import streamlit as st
@@ -125,19 +126,94 @@ def render_reports() -> None:
     st.caption("On Streamlit Cloud, storage resets when the app restarts. Download reports you want to keep.")
 
 
+STOPWORDS = frozenset(
+    "a an and are at be by can do does for from has have how i in is it me my next of on or our the there this "
+    "to was what when where which will with you your".split())
+
+
+def _terms(query: str) -> list[str]:
+    """Search words without filler like 'the' / 'in' (which would match every chat); all words if only filler."""
+    words = [t for t in re.split(r"\W+", query.lower()) if t]
+    return [t for t in words if t not in STOPWORDS] or words
+
+
+def _plain(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[#*_`>|]", " ", text)).strip()
+
+
+def _md(text: str) -> str:
+    """Show user / model text literally inside Markdown (no formatting, links or math)."""
+    return re.sub(r"([\\`*_{}\[\]()#+!|$<>~])", r"\\\1", text)
+
+
+def _snippet(text: str, terms: list[str], width: int = 180) -> str:
+    low = text.lower()
+    pos = min((p for p in (low.find(t) for t in terms) if p >= 0), default=0)
+    start = max(0, pos - 60)
+    return ("…" if start else "") + text[start:start + width].strip() + ("…" if start + width < len(text) else "")
+
+
+def chat_matches(convs: list[dict], query: str, city: str | None = None) -> list[dict]:
+    """Keyword search over this session's conversations, best match first (newest first on ties)."""
+    terms = _terms(query)
+    if not terms:
+        return []
+    found = []
+    for conv in convs:
+        msgs = [m for m in conv["messages"] if not m.get("error")]  # skip "agent could not answer" notices
+        texts = [_plain(str(m.get("content", ""))) for m in msgs]
+        hay = " ".join(texts).lower()
+        if city and city.lower() not in hay:
+            continue
+        hits = sum(hay.count(t) for t in terms)
+        if not hits:
+            continue
+        answers = [t for m, t in zip(msgs, texts) if m["role"] == "assistant"]
+        best = next((t for t in answers + texts if any(term in t.lower() for term in terms)), "")
+        found.append({"conv": conv, "hits": hits, "excerpt": _snippet(best, terms)})
+    found.sort(key=lambda f: f["hits"], reverse=True)  # stable: convs arrive newest first
+    return found
+
+
+def _chat_cards(matches: list[dict]) -> None:
+    for f in matches[:10]:
+        conv = f["conv"]
+        agent = AGENT_PROFILES.get(conv["agent"], AGENT_PROFILES["weather"])
+        asked = len([m for m in conv["messages"] if m["role"] == "user"])
+        with st.container(border=True):
+            c1, c2 = st.columns([6, 1], vertical_alignment="center")
+            c1.markdown(f"**{agent['icon']} {_md(conv['title'])}**")
+            c1.caption(f"{agent['name']} · started {conv['created']} · {asked} question(s)")
+            if f["excerpt"]:
+                c1.caption(_md(f["excerpt"]))
+            c2.button("💬 Open chat", key=f"arch-chat-{conv['id']}", on_click=state.open_conversation,
+                      args=(conv["id"],), width="stretch", help="Open this conversation in the AI agent tab")
+
+
 def render_archive(settings) -> None:
-    scope = "all visitors (owner view)" if state.is_owner() else "your analyses from this browser session"
-    st.html(ui.section("Analysis archive", f"semantic or keyword search · {scope}"))
+    scope = "all visitors' reports (owner view)" if state.is_owner() else "this browser session"
+    st.html(ui.section("Analysis archive", f"your conversations + saved reports · {scope}"))
     modes = ["Semantic (vector DB)", "Keyword"] if settings.has_llm else ["Keyword"]
     c1, c2, c3 = st.columns([4, 2, 2])
     q = c1.text_input("Search past analyses", placeholder="thunderstorm risk in Punjab · dust storm Karachi…", key="arch_q")
-    mode = c2.selectbox("Search mode", modes, key="arch_mode")
+    mode = c2.selectbox("Search mode", modes, key="arch_mode",
+                        help="Applies to saved reports. Conversations are always matched by keyword.")
     city_f = c3.text_input("City filter", placeholder="optional", key="arch_city")
     if not settings.has_llm:
         st.caption("Semantic search turns on when `GOOGLE_API_KEY` is in `.env` (used for embeddings).")
     if not q:
-        st.html(ui.empty("Type what you are looking for: a city, a hazard, a date, a phrase from a report."))
+        st.html(ui.empty("Search everything from this browser session: your conversations with the agent and the "
+                         "reports you saved. Type a city, a hazard or a phrase."))
         return
+
+    chats = chat_matches(state.history(), q, city_f or None)
+    st.html(ui.section("Your conversations", f"{len(chats)} chat(s) · keyword match · this browser session"))
+    if chats:
+        _chat_cards(chats)
+    else:
+        st.caption("No conversation in this browser session mentions these words.")
+
+    st.html(ui.section("Saved reports", f"{mode.split(' (')[0].lower()} search · PDF reports and their analyses"))
     if mode.startswith("Semantic"):
         try:
             hits = vector_store.search(q, k=8, city=city_f or None, owner=state.visitor_id(),
@@ -159,5 +235,6 @@ def render_archive(settings) -> None:
         entries = reports.search_reports(_visible(), q, None, city_f or None)
     st.caption(f"{len(entries)} result(s)")
     if not entries:
-        st.html(ui.empty("No matching analyses."))
+        st.html(ui.empty("No matching analyses. A report is saved when you ask the agent for a PDF report "
+                         "(for example “…and save a PDF report”) or publish one from the Dashboard."))
     _cards(entries, "arch")

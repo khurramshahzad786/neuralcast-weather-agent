@@ -41,17 +41,6 @@ def _try_owner_unlock() -> None:
     ss.owner_msg = "" if ok else msg
 
 
-def _open(cid: str) -> None:
-    ss = st.session_state
-    # drop the empty draft we are leaving, so it never shows up as a phantom entry
-    current = ss.conversations.get(ss.active_conv)
-    if current is not None and not current["messages"] and current["id"] != cid:
-        del ss.conversations[current["id"]]
-    ss.active_conv = cid
-    ss.agent_key = ss.conversations[cid]["agent"]
-    state.open_ai_tab()
-
-
 def _new() -> None:
     state.new_conversation(st.session_state.agent_key)
     state.open_ai_tab()
@@ -89,7 +78,7 @@ def render(settings) -> str:
             icon = AGENT_PROFILES.get(conv["agent"], AGENT_PROFILES["weather"])["icon"]
             n = len([m for m in conv["messages"] if m["role"] == "user"])
             active = conv["id"] == ss.active_conv
-            st.button(f"{icon}  {conv['title']}", key=f"conv-{conv['id']}", width="stretch", on_click=_open,
+            st.button(f"{icon}  {conv['title']}", key=f"conv-{conv['id']}", width="stretch", on_click=state.open_conversation,
                       args=(conv["id"],), type="tertiary" if not active else "secondary",
                       help=f"Open this chat · {n} question(s) · started {conv['created']} · "
                            f"{AGENT_PROFILES.get(conv['agent'], {}).get('name', '')}")

@@ -386,3 +386,47 @@ def test_archive_search_shows_only_own_analyses(owner_env):
     _unlock(at, OWNER_PW)
     at.text_input(key="arch_q").input("Someone").run()
     assert "Someone Elses Report" in _all_text(at)
+
+
+def _chat(cid: str, title: str, question: str, answer: str, error: bool = False) -> dict:
+    return {"id": cid, "title": title, "agent": "weather", "created": "27 Nov 11:00",
+            "messages": [{"role": "user", "content": question},
+                         {"role": "assistant", "content": answer, "error": error, "tools": [], "pdfs": [],
+                          "usage": {"total_tokens": 10, "llm_calls": 1}, "run_id": None, "model": "test", "time": "11:00 PKT"}]}
+
+
+def test_chat_matches_ranks_skips_filler_and_errors():
+    from weather_agent.ui.views.library import chat_matches
+
+    lahore = _chat("a", "Lahore rain", "Will it rain in Lahore?", "## Lahore\nRain after 21:00, storm risk **Moderate**.")
+    tokyo = _chat("b", "Tokyo", "Weather in Tokyo?", "Tokyo is dry and sunny.")
+    failed = _chat("c", "Karachi", "Rain in Karachi?", "The agent could not answer.", error=True)
+    convs = [tokyo, lahore, failed]  # newest first, as state.history() returns them
+
+    found = chat_matches(convs, "Will it rain or storm in Lahore in the next 6 hours?")
+    # Lahore first (most hits); Karachi's question says "rain"; "in", "the", "it" alone never match Tokyo
+    assert [f["conv"]["id"] for f in found] == ["a", "c"]
+    assert "Rain after 21:00" in found[0]["excerpt"] and "#" not in found[0]["excerpt"]
+    assert [f["conv"]["id"] for f in chat_matches(convs, "rain", city="karachi")] == ["c"]  # the question still counts
+    assert chat_matches(convs, "rain", city="Tokyo") == []
+    assert chat_matches(convs, "   ") == []
+
+
+def test_archive_finds_session_conversations_and_opens_them(env):
+    from weather_agent.ui import state
+
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.session_state["conversations"] = {
+        "c1": _chat("c1", "Will it rain or storm in Lahore", "Will it rain or storm in Lahore in the next 6 hours?",
+                    "## Lahore: light rain after 21:00\nStorm risk **Moderate**.")}
+    at.session_state["active_conv"] = "c1"
+    at.text_input(key="arch_q").input("Will it rain or storm in Lahore in the next 6 hours?").run()
+    assert not at.exception, at.exception
+    text = _all_text(at)
+    assert "Will it rain or storm in Lahore" in text and "light rain after 21:00" in text
+    assert "No matching analyses" in text  # no saved report yet, and the page says how to make one
+
+    at.button(key="arch-chat-c1").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["active_conv"] == "c1" and at.session_state["main_tab"] == state.AI_TAB

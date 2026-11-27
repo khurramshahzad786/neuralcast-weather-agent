@@ -144,7 +144,7 @@ forecast window, recent searches as chips.
 | 🤖 AI agent | Chat + **live context card** that follows the conversation; tool/sub-agent progress; tokens; per-answer **PDF** and **Markdown** downloads; 👍/👎 feedback |
 | 🛰 Pakistan radar | Risk map, KPIs, city × hour heatmap, rankings, city board, earthquakes around Pakistan |
 | 📥 Downloads | **Data exports** for the current city (hourly CSV, 7-day CSV, air-quality CSV, full JSON, earthquakes CSV), Pakistan scan CSV, conversation transcript, plus the searchable **PDF library** |
-| 🔎 Archive | Semantic (vector DB) or keyword search over saved analyses |
+| 🔎 Archive | Keyword search over your conversations from this browser session (with an "Open chat" button), plus semantic (vector DB) or keyword search over saved report analyses |
 | 📊 Telemetry | Everyone: their own token usage in this browser session. Owner: also the LangSmith usage meter and evaluation commands |
 
 Data sources: **Open-Meteo** (weather, AQI, geocoding — free, no key), **MET Norway** (backup forecast — free, no key) and **USGS** earthquake catalogue (free, no key).
