@@ -206,15 +206,15 @@ h1, h2, h3, h4, h5 {{ font-family: var(--sans); letter-spacing: -0.01em; color: 
 [data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) {{ background: rgba(250,178,25,.14) !important; border-color: rgba(250,178,25,.4); }}
 [data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]) {{ background: {p.accent}18 !important; border-color: {p.accent}55; }}
 
-/* buttons */
-.stButton > button, .stDownloadButton > button {{
+/* buttons (descendant selectors: a button with help= sits inside a tooltip wrapper, not directly in .stButton) */
+.stButton button, .stDownloadButton button {{
   border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink);
   font-weight: 600; transition: all .15s ease;
 }}
-.stButton > button p, .stDownloadButton > button p {{ color: var(--ink) !important; }}
-.stButton > button:hover, .stDownloadButton > button:hover {{ border-color: var(--accent); transform: translateY(-1px); }}
-.stButton > button[kind="primary"] {{ background: linear-gradient(135deg, #0ea5e9, #6366f1); border: 0; }}
-.stButton > button[kind="primary"] p {{ color: #fff !important; }}
+.stButton button p, .stDownloadButton button p {{ color: var(--ink) !important; }}
+.stButton button:hover, .stDownloadButton button:hover {{ border-color: var(--accent); transform: translateY(-1px); }}
+.stButton button[kind="primary"] {{ background: linear-gradient(135deg, #0ea5e9, #6366f1); border: 0; }}
+.stButton button[kind="primary"] p {{ color: #fff !important; }}
 
 /* ---------- terminal components ---------- */
 .wt-topbar {{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
@@ -349,20 +349,20 @@ h1, h2, h3, h4, h5 {{ font-family: var(--sans); letter-spacing: -0.01em; color: 
 .nt-role {{ font-size: .72rem; color: var(--muted); }}
 .nt-online {{ position:absolute; right: 12px; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; background: var(--good); }}
 .nt-side-h {{ font-family: var(--mono); font-size: .66rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 16px 2px 6px; }}
-[data-testid="stSidebar"] .stButton > button {{ justify-content: flex-start; text-align: left; padding: 8px 12px; font-weight: 600; }}
-[data-testid="stSidebar"] .stButton > button p {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }}
+[data-testid="stSidebar"] .stButton button {{ justify-content: flex-start; text-align: left; padding: 8px 12px; font-weight: 600; }}
+[data-testid="stSidebar"] .stButton button p {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }}
 /* "New conversation" = the one primary action */
-[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
+[data-testid="stSidebar"] .stButton button[kind="primary"] {{
   justify-content: center; background: linear-gradient(135deg, #0ea5e9, #6366f1) !important; border: 0 !important;
   box-shadow: 0 6px 16px rgba(99,102,241,.30); height: 44px;
 }}
-[data-testid="stSidebar"] .stButton > button[kind="primary"] p {{ color: #fff !important; }}
+[data-testid="stSidebar"] .stButton button[kind="primary"] p {{ color: #fff !important; }}
 /* history rows: plain list items; the open chat is highlighted */
-[data-testid="stSidebar"] .stButton > button[kind="tertiary"] {{
+[data-testid="stSidebar"] .stButton button[kind="tertiary"] {{
   width: 100%; border-radius: 10px; padding: 8px 12px; background: transparent; border: 1px solid transparent;
 }}
-[data-testid="stSidebar"] .stButton > button[kind="tertiary"] p {{ color: var(--ink-2) !important; font-weight: 500; }}
-[data-testid="stSidebar"] .stButton > button[kind="tertiary"]:hover {{ background: var(--surface-2); }}
+[data-testid="stSidebar"] .stButton button[kind="tertiary"] p {{ color: var(--ink-2) !important; font-weight: 500; }}
+[data-testid="stSidebar"] .stButton button[kind="tertiary"]:hover {{ background: var(--surface-2); }}
 [data-testid="stSidebar"] [class*="st-key-conv-"] button[kind="secondary"] {{
   background: {p.accent}1f !important; border: 1px solid {p.accent}88 !important; border-radius: 10px;
 }}

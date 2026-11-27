@@ -181,7 +181,7 @@ def _chat_cards(matches: list[dict]) -> None:
         agent = AGENT_PROFILES.get(conv["agent"], AGENT_PROFILES["weather"])
         asked = len([m for m in conv["messages"] if m["role"] == "user"])
         with st.container(border=True):
-            c1, c2 = st.columns([6, 1], vertical_alignment="center")
+            c1, c2 = st.columns([5, 1.4], vertical_alignment="center")  # room for the full "Open chat" label
             c1.markdown(f"**{agent['icon']} {_md(conv['title'])}**")
             c1.caption(f"{agent['name']} · started {conv['created']} · {asked} question(s)")
             if f["excerpt"]:
